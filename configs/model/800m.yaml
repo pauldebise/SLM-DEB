@@ -1,0 +1,14 @@
+model:
+  name: slm-800m
+  description: SLM 800m (800M parameters target)
+  vocab_size: 32768
+  d_model: 1344
+  n_layers: 35
+  n_heads: 6
+  d_ff: 3584
+  head_dim: 224
+  max_seq_len: 1024
+  dropout: 0.0
+  theta: 10000.0
+  estimated_params: 802796736
+  error_pct: 0.35

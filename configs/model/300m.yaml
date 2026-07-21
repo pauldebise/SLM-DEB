@@ -1,0 +1,14 @@
+model:
+  name: slm-300m
+  description: SLM 300m (300M parameters target)
+  vocab_size: 32768
+  d_model: 1280
+  n_layers: 13
+  n_heads: 5
+  d_ff: 3456
+  head_dim: 256
+  max_seq_len: 1024
+  dropout: 0.0
+  theta: 10000.0
+  estimated_params: 299697920
+  error_pct: 0.1

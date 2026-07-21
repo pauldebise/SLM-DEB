@@ -1,0 +1,14 @@
+model:
+  name: slm-100m
+  description: SLM 100m (100M parameters target)
+  vocab_size: 32768
+  d_model: 448
+  n_layers: 35
+  n_heads: 4
+  d_ff: 1216
+  head_dim: 112
+  max_seq_len: 1024
+  dropout: 0.0
+  theta: 10000.0
+  estimated_params: 100011072
+  error_pct: 0.01
