@@ -192,6 +192,7 @@ def train(args):
 
     dtype = torch.bfloat16 if hw_cfg.get("precision") == "bf16" else torch.float16
     use_amp = hw_cfg.get("precision") in ("bf16", "fp16")
+    use_grad_ckpt = hw_cfg.get("gradient_checkpointing", False)
 
     micro_batch_size = hw_cfg["batch"]["micro_batch_size"]
     accum_steps, effective_tokens = get_grad_accum_steps(
@@ -362,7 +363,7 @@ def train(args):
                 torch.compiler.cudagraph_mark_step_begin()
 
             with torch.amp.autocast("cuda", enabled=use_amp, dtype=dtype):
-                out = model(input_ids, labels=labels)
+                out = model(input_ids, labels=labels, use_checkpoint=use_grad_ckpt)
                 loss = out["loss"] / accum_steps
 
             if scaler:
