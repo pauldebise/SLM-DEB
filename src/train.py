@@ -111,13 +111,22 @@ def _strip_compile_prefix(state_dict):
     return {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
 
 
+def _add_orig_mod_prefix(state_dict, target_model):
+    if not hasattr(target_model, "_orig_mod"):
+        return state_dict
+    return {"_orig_mod." + k: v for k, v in state_dict.items()}
+
+
 def load_checkpoint(path, model, optimizer=None, scheduler=None):
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+    state_dict = checkpoint["model_state_dict"]
 
     if isinstance(model, DDP):
-        model.module.load_state_dict(checkpoint["model_state_dict"])
+        target = model.module
     else:
-        model.load_state_dict(checkpoint["model_state_dict"])
+        target = model
+    state_dict = _add_orig_mod_prefix(state_dict, target)
+    target.load_state_dict(state_dict)
 
     if optimizer and "optimizer_state_dict" in checkpoint:
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
