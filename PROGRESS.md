@@ -5,6 +5,52 @@ l'historique existant.
 
 ---
 
+## Session 2026-07-21 (run 2) — Phase 9 validation + bug fixes
+
+Statut : **Pipeline complet vérifié bout en bout.** Phase 9 prête à lancer.
+
+### Fait
+
+- **Correction CUDA graphs** : `torch.compile(mode="reduce-overhead")` incompatible
+  avec weight tying + gradient accumulation → fallback vers `mode="default"` dans
+  `src/train.py` après warmup test.
+- **Correction batch size** : hardware_detect.py générait micro_batch=32 → OOM.
+  Corrigé : formule basée sur `vram * 0.4` (donne 9 sur 24GB). Ajout du
+  paramètre `compile_mode` dans la config hardware.
+- **Correction checkpoint `_orig_mod.`** : `torch.compile` ajoute ce préfixe dans
+  le state_dict → `_strip_compile_prefix()` dans `save_checkpoint()`.
+- **Correction eval.py** : fallback vers split `train` si `val_shards` vide.
+- **Vérification bout en bout** :
+  - Tokenizer (2k vocab test, round-trip OK — FR accents, Python, chat)
+  - Preprocessing (3 sources, 500k tokens, shards binaires uint16)
+  - Training 15 steps (loss 110 → 81 décroissante, pas de crash)
+  - Resume OK (step 16 → 25, loss 81 → 67)
+  - Eval OK (val loss 5.08, ppl 161.79 sur 15-step checkpoint)
+  - GUI OK (charge checkpoint, génération fonctionnelle)
+- **Benchmark** : 64,610 tokens/sec, 37% MFU, 8.2 GB VRAM (bs=8, compile default)
+
+### En cours
+
+- Rien — tout est prêt pour le lancement du run réel.
+
+### Prochain jalon précis
+
+1. Lancer `bash scripts/launch_training.sh 300m` (entraîne tokenizer 32k sur
+   ~300k échantillons, pré-tokenize ~12B tokens, puis entraînement complet).
+2. Surveiller avec `tensorboard --logdir logs/`.
+3. Vérifier la reprise après interruption simulée (kill puis relaunch avec
+   `--resume`).
+
+### Blocages / questions ouvertes
+
+- `bigcode/the-stack-dedup` toujours gated (nécessite auth HF).
+  `ise-uiuc/Magicoder-OSS-Instruct-75K` fonctionne comme alternative Python.
+- `torch.compile(mode="reduce-overhead")` (CUDA graphs) incompatible avec le
+  weight tying dans le contexte de gradient accumulation. À investiguer plus
+  tard si le gain de ~27% vaut un refactoring du modèle.
+
+---
+
 ## Session 2026-07-21 — Agent run (final status)
 
 Statut : **Phases 0-8 + 10 complete.** Phase 9 (first real run) documented

@@ -51,12 +51,12 @@ def detect_hardware():
         config['precision'] = 'bf16' if supports_bf16 else 'fp16'
 
         total_vram = sum(g['vram_gb'] for g in gpus) / len(gpus)
-        context_len_k = 1.024
-        micro_batch = max(1, int(total_vram * 2 / context_len_k))
-        micro_batch = min(micro_batch, 32)
+        micro_batch = max(1, int(total_vram * 0.4))
+        micro_batch = min(micro_batch, 16)
+        effective_target = micro_batch * 1024 * 16
         config['batch'] = {
             'micro_batch_size': micro_batch,
-            'target_effective_tokens_per_step': 524288,
+            'target_effective_tokens_per_step': effective_target,
         }
 
         config['dataloader'] = {
@@ -68,6 +68,7 @@ def detect_hardware():
         config['gradient_checkpointing'] = total_vram < 32
         config['allow_tf32'] = cap_major >= 8
         config['use_torch_compile'] = True
+        config['compile_mode'] = 'default'
     else:
         config['ddp'] = False
         config['num_gpus'] = 0

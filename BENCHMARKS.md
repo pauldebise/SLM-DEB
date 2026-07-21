@@ -6,15 +6,35 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
-## [À REMPLIR PAR L'AGENT] Entrée template
+## Session 2026-07-21 (run 2) — Iteration 3: compile mode re-evaluation
 
-- Date :
-- Contexte matériel (depuis `configs/hardware/auto.yaml`) :
-- Changement testé :
-- Tokens/sec avant → après :
-- MFU avant → après :
-- Goulot identifié :
-- Décision : gardé / rejeté — pourquoi :
+- Date : 2026-07-21
+- Contexte matériel : 1x RTX 4090 (23.5 GB VRAM), bf16, TF32 activé
+- Changement testé : `torch.compile(mode="reduce-overhead")` vs `mode="default"` avec gradient accumulation
+- Tokens/sec avec default mode (bs=8) : 64,610
+- MFU avec default mode (bs=8) : 37.0%
+- GPU memory (bs=8) : 8.20 GB
+- Goulot identifié : `reduce-overhead` (CUDA graphs) est incompatible avec
+  weight tying + gradient accumulation → crash. `default` mode fonctionne et
+  donne des performances acceptables.
+- Décision : **gardé le fallback automatique** `reduce-overhead` → `default`.
+  Gain de 26.7% de `reduce-overhead` perdu par rapport à l'itération 1,
+  compensé partiellement par le scaling batch plus agressif (64.6k vs 48.8k
+  tokens/sec). MFU de 37% avec `default` est honorable. Un refactoring du
+  weight tying pour compatibilité CUDA graphs est laissé pour plus tard.
+
+## Session 2026-07-21 (run 2) — Iteration 4: batch size hardware detection fix
+
+- Date : 2026-07-21
+- Contexte matériel : 1x RTX 4090 (23.5 GB VRAM), bf16, TF32, torch.compile default
+- Changement testé : formule micro_batch dans hardware_detect.py (vram*2 →
+  vram*0.4) + cible effective tokens proportionnelle
+- Avant : micro_batch=32 → OOM au premier forward
+- Après : micro_batch=9, effective_target=147,456, grad_accum=16
+- GPU memory (avéré) : ~8-10 GB stable en entraînement avec bs=9
+- Décision : **gardé** — le scaling conservateur évite l'OOM et le gradient
+  accumulation maintient un throughput élevé. La formule s'adapte
+  automatiquement à d'autres GPUs.
 
 ---
 

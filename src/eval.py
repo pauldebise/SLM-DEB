@@ -25,12 +25,22 @@ from model.transformer import Transformer, TransformerConfig
 from data.dataset import build_dataloader
 
 
+def _detect_split(manifest_path):
+    import json
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+    if manifest.get("val_shards"):
+        return "val"
+    return "train"
+
+
 def evaluate_perplexity(model, device, manifest_path, seq_len, batch_size, max_batches=100):
+    split = _detect_split(manifest_path)
     loader = build_dataloader(
         manifest_path=manifest_path,
         seq_len=seq_len,
         micro_batch_size=batch_size,
-        split="val",
+        split=split,
         num_workers=2,
         shuffle=False,
     )

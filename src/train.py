@@ -85,10 +85,13 @@ def save_checkpoint(model, optimizer, scheduler, step, epoch, metrics, config,
                     checkpoint_dir, is_best=False):
     os.makedirs(checkpoint_dir, exist_ok=True)
 
+    state_dict = model.module.state_dict() if isinstance(model, DDP) else model.state_dict()
+    state_dict = _strip_compile_prefix(state_dict)
+
     checkpoint = {
         "step": step,
         "epoch": epoch,
-        "model_state_dict": model.module.state_dict() if isinstance(model, DDP) else model.state_dict(),
+        "model_state_dict": state_dict,
         "optimizer_state_dict": optimizer.state_dict(),
         "scheduler_state_dict": scheduler.state_dict(),
         "rng_state": torch.get_rng_state(),
@@ -102,6 +105,10 @@ def save_checkpoint(model, optimizer, scheduler, step, epoch, metrics, config,
     path = os.path.join(checkpoint_dir, f"checkpoint_{tag}.pt")
     torch.save(checkpoint, path)
     return path
+
+
+def _strip_compile_prefix(state_dict):
+    return {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
 
 
 def load_checkpoint(path, model, optimizer=None, scheduler=None):
@@ -193,14 +200,38 @@ def train(args):
     tcfg = TransformerConfig(model_cfg)
     model = Transformer(tcfg).to(device)
 
+    compile_mode = hw_cfg.get("compile_mode", "reduce-overhead")
     if hw_cfg.get("use_torch_compile", False) and hasattr(torch, "compile"):
         try:
-            model = torch.compile(model, mode="reduce-overhead")
+            model = torch.compile(model, mode=compile_mode)
+            dummy = torch.randint(0, model_cfg["vocab_size"],
+                                  (2, 4), device=device)
+            with torch.amp.autocast("cuda", enabled=True, dtype=dtype):
+                _ = model(dummy, labels=dummy)
             if is_main:
-                print("torch.compile enabled (reduce-overhead)")
+                print(f"torch.compile enabled ({compile_mode})")
         except Exception as e:
-            if is_main:
-                print(f"torch.compile failed: {e}, continuing without it")
+            if compile_mode == "reduce-overhead":
+                if is_main:
+                    print(f"torch.compile reduce-overhead failed: {e}")
+                    print(f"  falling back to 'default' mode")
+                try:
+                    del model
+                    model = Transformer(tcfg).to(device)
+                    model = torch.compile(model, mode="default")
+                    dummy = torch.randint(0, model_cfg["vocab_size"],
+                                          (2, 4), device=device)
+                    with torch.amp.autocast("cuda", enabled=True, dtype=dtype):
+                        _ = model(dummy, labels=dummy)
+                    if is_main:
+                        print("torch.compile enabled (default)")
+                except Exception as e2:
+                    if is_main:
+                        print(f"torch.compile default also failed: {e2}, "
+                              "continuing without it")
+            else:
+                if is_main:
+                    print(f"torch.compile failed: {e}, continuing without it")
 
     if world_size > 1:
         model = DDP(model, device_ids=[local_rank], output_device=local_rank)
@@ -317,6 +348,9 @@ def train(args):
 
             input_ids = batch["input_ids"].to(device, non_blocking=True)
             labels = batch["labels"].to(device, non_blocking=True)
+
+            if hasattr(torch.compiler, "cudagraph_mark_step_begin"):
+                torch.compiler.cudagraph_mark_step_begin()
 
             with torch.amp.autocast("cuda", enabled=use_amp, dtype=dtype):
                 out = model(input_ids, labels=labels)
