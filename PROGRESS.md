@@ -5,7 +5,7 @@ l'historique existant.
 
 ---
 
-## Session 2026-07-21 — Agent run
+## Session 2026-07-21 — Agent run (final status)
 
 Statut : **Phases 0-8 + 10 complete.** Phase 9 (first real run) documented
 and ready to launch, but actual training not started (requires data preparation
