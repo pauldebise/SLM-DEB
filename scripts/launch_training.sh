@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Full pipeline launch script for the SLM trainer.
-# Usage: bash scripts/launch_training.sh [100m|300m|800m]
+# Usage: bash scripts/launch_training.sh [100m|300m|800m] [--total-tokens N]
 #
 # This script:
 # 1. Detects hardware and generates auto.yaml
@@ -8,7 +8,10 @@
 # 3. Downloads and pre-tokenizes data (if not exists)
 # 4. Launches training in a tmux session (so it survives SSH disconnects)
 #
-# For the first run, prefer: bash scripts/launch_training.sh 300m
+# Examples:
+#   bash scripts/launch_training.sh 300m                    # default ~12B tokens
+#   bash scripts/launch_training.sh 300m --total-tokens 1B  # ~1B tokens (quick)
+#   bash scripts/launch_training.sh 300m --total-tokens 12B # ~12B tokens
 
 set -euo pipefail
 
@@ -16,13 +19,32 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_DIR"
 
 MODEL_SIZE="${1:-300m}"
+TOTAL_TOKENS="12B"
+if [ $# -ge 3 ] && [ "$2" = "--total-tokens" ]; then
+  TOTAL_TOKENS="$3"
+fi
+
 MODEL_CONFIG="configs/model/${MODEL_SIZE}.yaml"
 TOKENIZER_PATH="data/tokenizer/tokenizer.json"
 MANIFEST_PATH="data/shards/manifest.json"
 SESSION_NAME="slm-train-${MODEL_SIZE}"
 
+TOTAL_TOKENS_NUM=$(python3 -c "
+t = '${TOTAL_TOKENS}'.upper()
+mult = 1
+if t.endswith('B'):
+    mult, t = 1_000_000_000, t[:-1]
+elif t.endswith('M'):
+    mult, t = 1_000_000, t[:-1]
+elif t.endswith('K'):
+    mult, t = 1_000, t[:-1]
+val = float(t) * mult
+print(int(val))
+")
+
 echo "=== SLM Trainer Pipeline ==="
 echo "Model: ${MODEL_SIZE}"
+echo "Total tokens target: ${TOTAL_TOKENS} (~${TOTAL_TOKENS_NUM} tokens)"
 echo "Repo: ${REPO_DIR}"
 echo ""
 
@@ -49,7 +71,8 @@ if [ ! -f "${MANIFEST_PATH}" ]; then
   python3 src/data/preprocess.py \
     --config configs/data/mixture.yaml \
     --tokenizer "${TOKENIZER_PATH}" \
-    --output-dir data/shards
+    --output-dir data/shards \
+    --max-tokens "${TOTAL_TOKENS_NUM}"
 else
   echo "[3/4] Pre-tokenized data already exists at ${MANIFEST_PATH}"
 fi
@@ -57,7 +80,7 @@ fi
 # Step 4: Launch training
 echo "[4/4] Launching training for ${MODEL_SIZE}..."
 
-# Estimate total steps for ~12B tokens
+# Estimate total steps
 EFFECTIVE_TOKENS=$(python3 -c "
 import yaml
 with open('configs/hardware/auto.yaml') as f:
@@ -65,9 +88,8 @@ with open('configs/hardware/auto.yaml') as f:
 target = hw['batch']['target_effective_tokens_per_step']
 print(target)
 ")
-TOTAL_TOKENS=12000000000  # ~12B
-MAX_STEPS=$((TOTAL_TOKENS / EFFECTIVE_TOKENS))
-echo "Estimated max steps for ~12B tokens: ${MAX_STEPS}"
+MAX_STEPS=$((TOTAL_TOKENS_NUM / EFFECTIVE_TOKENS))
+echo "Estimated max steps for ~${TOTAL_TOKENS} tokens: ${MAX_STEPS}"
 
 # Launch in tmux if available
 TRAIN_CMD="python3 src/train.py \

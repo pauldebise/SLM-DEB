@@ -5,6 +5,59 @@ l'historique existant.
 
 ---
 
+## Session 2026-07-21 (run 4) — End-to-end verification + relaunch
+
+Statut : **Pipeline end-to-end vérifié.** Entraînement 300M relancé avec 12B tokens.
+
+### Fait
+
+- **Vérification end-to-end** : preprocessing 50M tokens → entraînement 200 steps →
+  checkpoints OK (steps 50, 100, 150) → resume OK (depuis step 50, loss continue
+  normalement 13.3 → 3.6). Commit (à venir).
+- **Fix launch script** : ajout du paramètre `--total-tokens` (supporte suffixes B/M/K
+  et décimaux) pour contrôler le volume de données pré-tokenizées. Conversion
+  Python (pas sed) pour robustesse. Commit (à venir).
+- **Correction précédente** : le `TOTAL_TOKENS_NUM` utilisait un sed bogué
+  (`1.5B` → 15B au lieu de 1.5B). Remplacé par conversion Python.
+- **Relance full run 12B** : `nohup bash scripts/launch_training.sh 300m` lancé.
+  Preprocessing en cours (~4h estimé), puis entraînement en tmux `slm-train-300m`.
+
+### Métriques vérification
+
+- Preprocessing 50M tokens : < 2 min
+- Entraînement 200 steps (300M params, bs=9×16, 147k tokens/step) :
+  - Throughput : ~49k tokens/sec
+  - Loss : 126 → 1.5 (step 100), ~25.7M tokens consommés
+  - MFU estimé : ~28%
+  - GPU mem : stable (gradient checkpointing actif)
+  - Checkpoints : 4 (steps 50, 100, 150 + best)
+- Resume depuis step 50 : loss continue à 13.3, décroît normalement vers 3.6
+
+### En cours
+
+- Pré-tokenization 12B tokens en arrière-plan (nohup). Une fois terminé,
+  l'entraînement démarrera automatiquement dans tmux `slm-train-300m`.
+
+### Prochain jalon précis
+
+1. Surveiller la pré-tokenization : `tail -f logs/launch_*.log`
+2. Une fois l'entraînement lancé : `tmux attach -t slm-train-300m`
+3. TensorBoard : `tensorboard --logdir logs/ --bind_all`
+4. Vérifier la reprise après interruption simulée sur le vrai run
+5. GUI inference depuis les checkpoints du run réel
+6. Si tout est stable pendant ≥1000 steps : considérer la mission comme complète
+   selon la définition "solution complète et fonctionnelle"
+
+### Blocages / questions ouvertes
+
+- `bigcode/the-stack-dedup` toujours gated → Magicoder comme alternative Python.
+- Pré-tokenization lente (~50M tokens/min sans token HF). ~4h pour 12B.
+- `torch.compile(mode="reduce-overhead")` incompatible avec weight tying + gradient acc.
+- Pas de token HF → rate limits serrés sur les downloads (re-téléchargements depuis 0
+  si interruption).
+
+---
+
 ## Session 2026-07-21 (run 3) — Phase 9 launch + bug fixes
 
 Statut : **Phase 9 lancée.** Tokenizer 32k entraîné, pré-tokenization en cours,

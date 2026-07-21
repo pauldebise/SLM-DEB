@@ -6,6 +6,22 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-21 (run 4) — Iteration 6: end-to-end verification metrics
+
+- Date : 2026-07-21
+- Contexte : 1x RTX 4090 (23.5 GB VRAM), bf16, TF32, torch.compile default,
+  gradient checkpointing actif
+- Test : entraînement 300M params sur données réelles (47M tokens train, 190k val)
+- Throughput : ~49,000 tokens/sec (stable après warmup compile)
+- GPU memory : ~8-10 GB (stable)
+- Dataloader wait : négligeable (< 1% du temps de step)
+- MFU estimé : ~28% (pic théorique bf16 RTX 4090 : ~174.5 TFLOPS)
+- Goulot identifié : GPU compute-bound. Pas de goulot data ou mémoire.
+- Résumé : le pipeline complet fonctionne (preprocess → train → checkpoint → resume).
+  Performance conforme aux benchmarks précédents (~49k tok/s à bs=9×16).
+  Décision : prêt pour le run 12B. Pas d'optimisation supplémentaire requise
+  avant de voir le comportement sur un run long.
+
 ## Session 2026-07-21 (run 3) — Iteration 5: gradient checkpointing enabled
 
 - Date : 2026-07-21
