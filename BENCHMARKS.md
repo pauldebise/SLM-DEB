@@ -6,6 +6,32 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-21 (run 3) — Iteration 5: gradient checkpointing enabled
+
+- Date : 2026-07-21
+- Contexte matériel : 1x RTX 4090 (23.5 GB VRAM), bf16, TF32, torch.compile default
+- Changement testé : activation effective du gradient checkpointing (bug :
+  `gradient_checkpointing: true` dans la config hardware mais jamais passé à
+  `model.forward(use_checkpoint=True)`). Smoke test sur modèle 21M (bs=9).
+- Avant : gradient checkpointing non utilisé (VRAM estimée ~8-10 GB sur 300M)
+- Après : gradient checkpointing fonctionnel. Impact VRAM à mesurer sur le run 300M
+  réel. Pas de crash, pas de régression sur la loss.
+- Décision : **gardé** — nécessaire pour le modèle 300M sur 24 GB VRAM.
+  Sans cela, le premier forward du 300M avec bs=9 pourrait dépasser la VRAM.
+
+## Session 2026-07-21 (run 3) — Phase 9 launch metrics
+
+- Date : 2026-07-21
+- Tokenizer 32k : entraîné sur 297k échantillons (200k texte + 50k code + 47k chat).
+  Round-trip OK. Fichier : 2.3 MB.
+- Pré-tokenization : ~50M tokens/min estimé sur fineweb-edu (sans token HF).
+  ~300M tokens (30 shards) en ~5 min. Projection : ~5h pour 12B tokens.
+- Entraînement 300M : prévu ~81k steps à 147k tokens/step effectifs.
+  Estimation throughput : ~50k tokens/sec → ~2.8 jours.
+  Lancé automatiquement après la pré-tokenization dans tmux.
+
+---
+
 ## Session 2026-07-21 (run 2) — Iteration 3: compile mode re-evaluation
 
 - Date : 2026-07-21

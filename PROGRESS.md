@@ -5,49 +5,51 @@ l'historique existant.
 
 ---
 
-## Session 2026-07-21 (run 2) — Phase 9 validation + bug fixes
+## Session 2026-07-21 (run 3) — Phase 9 launch + bug fixes
 
-Statut : **Pipeline complet vérifié bout en bout.** Phase 9 prête à lancer.
+Statut : **Phase 9 lancée.** Tokenizer 32k entraîné, pré-tokenization en cours,
+entraînement 300M démarrera automatiquement dans tmux.
 
 ### Fait
 
-- **Correction CUDA graphs** : `torch.compile(mode="reduce-overhead")` incompatible
-  avec weight tying + gradient accumulation → fallback vers `mode="default"` dans
-  `src/train.py` après warmup test.
-- **Correction batch size** : hardware_detect.py générait micro_batch=32 → OOM.
-  Corrigé : formule basée sur `vram * 0.4` (donne 9 sur 24GB). Ajout du
-  paramètre `compile_mode` dans la config hardware.
-- **Correction checkpoint `_orig_mod.`** : `torch.compile` ajoute ce préfixe dans
-  le state_dict → `_strip_compile_prefix()` dans `save_checkpoint()`.
-- **Correction eval.py** : fallback vers split `train` si `val_shards` vide.
-- **Vérification bout en bout** :
-  - Tokenizer (2k vocab test, round-trip OK — FR accents, Python, chat)
-  - Preprocessing (3 sources, 500k tokens, shards binaires uint16)
-  - Training 15 steps (loss 110 → 81 décroissante, pas de crash)
-  - Resume OK (step 16 → 25, loss 81 → 67)
-  - Eval OK (val loss 5.08, ppl 161.79 sur 15-step checkpoint)
+- **Correction checkpoint resume** : `_strip_compile_prefix()` retirait le préfixe
+  `_orig_mod.` au save, mais ne l'ajoutait pas au load → crash au resume.
+  Ajout de `_add_orig_mod_prefix()` dans `load_checkpoint()`. Commit f239fe3.
+- **Correction gradient checkpointing** : `gradient_checkpointing: true` dans la
+  config hardware n'était jamais passé à `model.forward()`. Ajout du paramètre
+  `use_checkpoint` dans la boucle d'entraînement. Commit be93fc9.
+- **Vérification bout en bout avant lancement** :
+  - Tokenizer 4k vocab smoke test (round-trip OK)
+  - Preprocessing 500k tokens (3 shards)
+  - Training 10+5 steps (loss 117 → 95 → 83, pas de crash)
+  - Resume OK (step 11 → 15, loss 95 → 83)
   - GUI OK (charge checkpoint, génération fonctionnelle)
-- **Benchmark** : 64,610 tokens/sec, 37% MFU, 8.2 GB VRAM (bs=8, compile default)
+- **Lancement Phase 9** : `nohup bash scripts/launch_training.sh 300m` en arrière-plan
+  le 2026-07-21 à 22:53 UTC. Le tokenizer 32k a été entraîné avec succès
+  (297k échantillons — round-trip OK). La pré-tokenization est en cours
+  (~30 shards/300M tokens en ~5 min, estimation ~5h pour 12B).
 
 ### En cours
 
-- Rien — tout est prêt pour le lancement du run réel.
+- Pré-tokenization des données (~12B tokens estimés) — le script continue en
+  arrière-plan. Une fois terminé, l'entraînement 300M se lancera automatiquement
+  dans une session tmux `slm-train-300m`.
 
 ### Prochain jalon précis
 
-1. Lancer `bash scripts/launch_training.sh 300m` (entraîne tokenizer 32k sur
-   ~300k échantillons, pré-tokenize ~12B tokens, puis entraînement complet).
-2. Surveiller avec `tensorboard --logdir logs/`.
-3. Vérifier la reprise après interruption simulée (kill puis relaunch avec
-   `--resume`).
+1. Surveiller la pré-tokenization : `tail -f logs/launch_*.log`
+2. Une fois l'entraînement lancé : `tmux attach -t slm-train-300m`
+3. TensorBoard : `tensorboard --logdir logs/ --bind_all`
+4. Vérifier la reprise après interruption simulée (kill puis relaunch avec `--resume`)
+5. GUI inference depuis les checkpoints : `python3 gui/app.py`
 
 ### Blocages / questions ouvertes
 
-- `bigcode/the-stack-dedup` toujours gated (nécessite auth HF).
-  `ise-uiuc/Magicoder-OSS-Instruct-75K` fonctionne comme alternative Python.
-- `torch.compile(mode="reduce-overhead")` (CUDA graphs) incompatible avec le
-  weight tying dans le contexte de gradient accumulation. À investiguer plus
-  tard si le gain de ~27% vaut un refactoring du modèle.
+- `bigcode/the-stack-dedup` toujours gated → Magicoder comme alternative Python.
+- Pré-tokenization lente (~50M tokens/min estimé, ~4h pour 12B) sans token HF.
+  Améliorable avec un token HF pour des rate limits plus élevés.
+- `torch.compile(mode="reduce-overhead")` (CUDA graphs) toujours incompatible avec
+  weight tying + gradient accumulation.
 
 ---
 
