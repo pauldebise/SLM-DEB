@@ -1,0 +1,41 @@
+# Data mixture configuration — ratios are expressed as weights,
+# normalized automatically to sum to 1.0.
+#
+# Adjust weights to change the composition. Total tokens sampled from each
+# source will be proportional to its weight.
+
+sources:
+  text:
+    dataset: HuggingFaceFW/fineweb-edu
+    config: sample-10BT
+    split: train
+    field: text
+    weight: 60
+    description: "General educational web text"
+
+  code:
+    dataset: ise-uiuc/Magicoder-OSS-Instruct-75K
+    config: null
+    split: train
+    field: solution
+    filter_lang: python
+    weight: 25
+    description: "Python code (filtered from Magicoder)"
+
+  chat:
+    dataset: HuggingFaceTB/smoltalk
+    config: all
+    split: train
+    field: messages
+    chat_format: "special_tokens"
+    weight: 15
+    description: "Chat/instruction data"
+
+# Pre-processing
+shard:
+  tokens_per_shard: 10_000_000
+  dtype: uint16  # for vocab < 65536
+
+# Validation split
+validation:
+  fraction: 0.005  # 0.5%
