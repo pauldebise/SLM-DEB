@@ -51,6 +51,32 @@ def cleanup_distributed():
         dist.destroy_process_group()
 
 
+def estimate_flops_per_token(d_model: int, n_layers: int, d_ff: int) -> float:
+    attn_flops = 6 * d_model * d_model
+    mlp_flops = 6 * d_model * d_ff
+    return n_layers * (attn_flops + mlp_flops)
+
+
+def get_peak_bf16_tflops(device) -> float:
+    if not torch.cuda.is_available():
+        return 0.0
+    name = torch.cuda.get_device_name(device)
+    name_lower = name.lower()
+    if "h100" in name_lower:
+        return 989.0
+    if "a100" in name_lower:
+        return 312.0
+    if "rtx 4090" in name_lower or "4090" in name_lower:
+        return 82.6
+    if "rtx 4080" in name_lower or "4080" in name_lower:
+        return 48.7
+    if "rtx 3090" in name_lower or "3090" in name_lower:
+        return 35.6
+    if "a6000" in name_lower:
+        return 38.7
+    return 82.6
+
+
 def load_configs(model_cfg_path, hardware_cfg_path=None):
     with open(model_cfg_path) as f:
         model_cfg = yaml.safe_load(f)["model"]
@@ -343,9 +369,14 @@ def train(args):
     }
 
     n_params = sum(p.numel() for p in model.parameters())
+    flops_per_token = estimate_flops_per_token(
+        model_cfg["d_model"], model_cfg["n_layers"], model_cfg["d_ff"]
+    )
+    peak_bf16_tflops = get_peak_bf16_tflops(device)
     if is_main:
         print(f"Model params: {n_params:,}")
         print(f"Total steps: {total_steps}, warmup: {warmup_steps}")
+        print(f"FLOPs/token: {flops_per_token/1e6:.1f}M, peak bf16: {peak_bf16_tflops:.1f} TFLOPS")
         print(f"Training...")
 
     while step < total_steps:
@@ -421,6 +452,8 @@ def train(args):
                                       torch.cuda.memory_allocated(device) / (1024 ** 3), step)
                     writer.add_scalar("system/gpu_util", torch.cuda.utilization(device) if hasattr(
                         torch.cuda, "utilization") else 0, step)
+                mfu = tps * flops_per_token / (peak_bf16_tflops * 1e12) * 100 if peak_bf16_tflops > 0 else 0
+                writer.add_scalar("train/mfu", mfu, step)
                 writer.add_scalar("system/dataloader_wait_ms",
                                   max(0, avg_step_time * 1000 - avg_step_time * 1000 * 0.7), step)
 
