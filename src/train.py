@@ -379,19 +379,25 @@ def train(args):
         print(f"FLOPs/token: {flops_per_token/1e6:.1f}M, peak bf16: {peak_bf16_tflops:.1f} TFLOPS")
         print(f"Training...")
 
+    dataloader_wait_acc = 0.0
+    dataloader_wait_steps = 0
+
     while step < total_steps:
         step_start = time.time()
         optimizer.zero_grad(set_to_none=True)
 
         accum_loss = 0.0
         accum_tokens = 0
+        data_wait = 0.0
 
         for micro_step in range(accum_steps):
+            t0 = time.time()
             try:
                 batch = next(data_iter)
             except StopIteration:
                 data_iter = iter(train_loader)
                 batch = next(data_iter)
+            data_wait += time.time() - t0
 
             input_ids = batch["input_ids"].to(device, non_blocking=True)
             labels = batch["labels"].to(device, non_blocking=True)
@@ -420,11 +426,17 @@ def train(args):
             optimizer.step()
 
         scheduler.step()
-        step += 1
-        tokens_since_log += accum_tokens
 
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         step_time = time.time() - step_start
         step_times.append(step_time)
+
+        dataloader_wait_acc += data_wait * 1000
+        dataloader_wait_steps += 1
+
+        step += 1
+        tokens_since_log += accum_tokens
 
         if step % args.log_interval == 0 and is_main:
             elapsed = time.time() - time_since_log
@@ -454,8 +466,10 @@ def train(args):
                         torch.cuda, "utilization") else 0, step)
                 mfu = tps * flops_per_token / (peak_bf16_tflops * 1e12) * 100 if peak_bf16_tflops > 0 else 0
                 writer.add_scalar("train/mfu", mfu, step)
-                writer.add_scalar("system/dataloader_wait_ms",
-                                  max(0, avg_step_time * 1000 - avg_step_time * 1000 * 0.7), step)
+                avg_data_wait = dataloader_wait_acc / dataloader_wait_steps if dataloader_wait_steps > 0 else 0
+                writer.add_scalar("system/dataloader_wait_ms", avg_data_wait, step)
+                dataloader_wait_acc = 0.0
+                dataloader_wait_steps = 0
 
             tokens_since_log = 0
             time_since_log = time.time()
