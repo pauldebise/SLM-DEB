@@ -6,6 +6,23 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-22 (run 12) — MFU logging added to TensorBoard
+
+- Date : 2026-07-22 01:15 UTC
+- Contexte : toutes les métriques Phase 6 sont présentes dans TensorBoard sauf
+  `train/mfu`. Le benchmark.py calculait déjà le MFU mais train.py ne le loggait pas.
+- Changement : ajout de `estimate_flops_per_token()` et `get_peak_bf16_tflops()`
+  dans `src/train.py`. Le MFU est loggé à chaque log_interval via
+  `writer.add_scalar("train/mfu", mfu, step)`.
+- MFU estimé (300M, 49k tok/s) : 28.0% — cohérent avec les benchmarks précédents.
+- Formule : `tps * flops_per_token / (peak_bf16_tflops * 1e12) * 100`
+  où `peak_bf16_tflops` est détecté automatiquement (RTX 4090: 82.6, A100: 312,
+  H100: 989, etc.)
+- Décision : **gardé** — comble une lacune de la Phase 6. Aucune régression.
+  Le logging sera effectif au prochain lancement d'entraînement (MFU ~28%).
+
+---
+
 ## Session 2026-07-22 (run 11) — Manifest sync tool verified + restart watcher deployed
 
 - Date : 2026-07-22 01:07 UTC

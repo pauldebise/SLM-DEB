@@ -5,6 +5,61 @@ l'historique existant.
 
 ---
 
+## Session 2026-07-22 (run 12) — MFU logging + sync verification + health check
+
+Statut : **Training 300M tourne (step ~410, healthy). Preprocess à 5.17B tokens text. MFU logging ajouté à TensorBoard.**
+
+### Fait
+
+- **Ajout `train/mfu` dans TensorBoard** : la métrique MFU (Model FLOPs Utilization)
+  manquait dans les logs TensorBoard (requis Phase 6). Ajout de
+  `estimate_flops_per_token()`, `get_peak_bf16_tflops()`, et du logging
+  `train/mfu` dans `src/train.py`. MFU calculé par rapport au pic bf16 du GPU
+  détecté (82.6 TFLOPS pour RTX 4090). Commit ca51ded.
+- **Vérification sync_manifest.py** : le script scanne correctement les shards
+  (487 train / 2 val, 4.87B tokens) et reconstruit le manifest. Fonctionnel.
+- **Vérification training 300M** :
+  - Step 410, loss 7.42 → 6.87, PPL 1.59 → 1.54, lr 6.15e-5, ~49k tok/s
+  - Décroissance healthy : 164 (step 10) → 7 (step 410)
+  - GPU : 9.36 GB / 24 GB, 99% util, compute-bound
+- **Vérification 3 configs modèle** : 100M (err 0.01%), 300M (err 0.10%),
+  800M (err 0.35%) — toutes ±3%.
+- **Vérification GUI** : chargement checkpoint step_25 OK, génération
+  fonctionnelle (qualité basse attendue à step 25).
+- **Vérification restart watcher** : flow correct — sync_manifest → kill old
+  tmux → launch_training.sh (skip preprocess car manifest existe) → nouveau
+  training dans tmux `slm-train-300m`.
+
+### En cours
+
+- **Entraînement 300M** dans tmux `slm-train-300m` : step ~410, loss décrôt
+  normalement. ~49k tok/s. Prochain checkpoint step 5000.
+- **Pré-tokenization** (PID 40414) : 517 shards text_train (~5.17B tokens),
+  2 shards val. Toujours en cours sur fineweb-edu. ETA text : ~40 min restantes.
+  Puis code (Magicoder) et chat (Smoltalk).
+- **Restart watcher** (PID 61008) : surveille PID 40414. Déclenchera le restart
+  avec dataset complet quand preprocess finit.
+
+### Prochain jalon précis
+
+1. Le preprocess finit → restart watcher déclenche restart avec dataset complet
+   (texte + code + chat, ~12B tokens)
+2. Vérifier nouveau training : `tmux attach -t slm-train-300m`
+3. Simuler interruption + resume sur le run réel
+4. Vérifier checkpoint à step 5000 sur le run complet
+5. GUI inference depuis checkpoints du run complet
+6. Si stable ≥1000 steps post-restart → fichier `DONE`
+
+### Blocages / questions ouvertes
+
+- bigcode/the-stack-dedup toujours gated → Magicoder.
+- Code et chat non encore traités (le preprocess fait texte en premier).
+- Pas de token HF → rate limits streaming.
+- torch.compile reduce-overhead incompatible weight tying + grad acc.
+- La vérification resume sur le vrai run ne sera possible qu'après le restart.
+
+---
+
 ## Session 2026-07-22 (run 11) — Manifest sync + auto-restart infrastructure
 
 Statut : **Training 300M tourne (step ~210, healthy). Sync manifest + restart watcher en place.**
