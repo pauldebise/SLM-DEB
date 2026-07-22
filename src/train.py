@@ -63,7 +63,7 @@ def load_configs(model_cfg_path, hardware_cfg_path=None):
         hw_cfg = {
             "precision": "bf16",
             "batch": {"micro_batch_size": 4, "target_effective_tokens_per_step": 524288},
-            "dataloader": {"num_workers": 4, "pin_memory": True, "prefetch_factor": 2},
+            "dataloader": {"num_workers": 4, "pin_memory": True, "prefetch_factor": 2, "persistent_workers": True},
             "gradient_checkpointing": True,
             "allow_tf32": True,
             "use_torch_compile": True,
@@ -265,6 +265,9 @@ def train(args):
         seed=args.seed,
         rank=rank,
         world_size=world_size,
+        prefetch_factor=hw_cfg["dataloader"].get("prefetch_factor", 2),
+        persistent_workers=hw_cfg["dataloader"].get("persistent_workers", True),
+        pin_memory=hw_cfg["dataloader"].get("pin_memory", True),
     )
 
     val_loader = None
@@ -284,6 +287,9 @@ def train(args):
             seed=args.seed,
             rank=rank,
             world_size=world_size,
+            prefetch_factor=hw_cfg["dataloader"].get("prefetch_factor", 2),
+            persistent_workers=hw_cfg["dataloader"].get("persistent_workers", False),
+            pin_memory=hw_cfg["dataloader"].get("pin_memory", True),
         )
     except Exception as e:
         if is_main:

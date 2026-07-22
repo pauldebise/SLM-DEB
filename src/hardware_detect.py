@@ -63,6 +63,7 @@ def detect_hardware():
             'num_workers': min(psutil.cpu_count(logical=False) or 4, 8),
             'pin_memory': True,
             'prefetch_factor': 2,
+            'persistent_workers': True,
         }
 
         config['gradient_checkpointing'] = total_vram < 32

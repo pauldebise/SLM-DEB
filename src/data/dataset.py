@@ -68,7 +68,7 @@ class SLMDataset(IterableDataset):
         carryover = np.array([], dtype=np.uint16)
 
         for shard_idx in shard_order:
-            if (shard_idx * (worker_id + 1)) % num_workers != worker_id % num_workers:
+            if shard_idx % num_workers != worker_id:
                 continue
 
             shard_info = self.shards[shard_idx]
@@ -97,7 +97,10 @@ class SLMDataset(IterableDataset):
 def build_dataloader(manifest_path: str, seq_len: int, micro_batch_size: int,
                      split: str = "train", num_workers: int = 0,
                      shuffle: bool = True, seed: int = 42,
-                     rank: int = 0, world_size: int = 1):
+                     rank: int = 0, world_size: int = 1,
+                     prefetch_factor: int = 2,
+                     persistent_workers: bool = True,
+                     pin_memory: bool = True):
     dataset = SLMDataset(
         manifest_path=manifest_path,
         seq_len=seq_len,
@@ -112,7 +115,9 @@ def build_dataloader(manifest_path: str, seq_len: int, micro_batch_size: int,
         dataset,
         batch_size=micro_batch_size,
         num_workers=num_workers,
-        pin_memory=True,
+        pin_memory=pin_memory,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None,
+        persistent_workers=persistent_workers if num_workers > 0 else False,
         drop_last=True,
     )
     return loader

@@ -5,6 +5,55 @@ l'historique existant.
 
 ---
 
+## Session 2026-07-22 (run 6) — Bug fixes + performance
+
+Statut : **Fixes commités, smoke tests passés.** Pré-tokenization toujours en
+cours (~207 shards / 3.9 GB, ~2.1B tokens traités sur ~12B).
+
+### Fait
+
+- **Fix shard distribution bug (`dataset.py`)** : la formule
+  `(shard_idx * (worker_id + 1)) % num_workers` était incorrecte et laissait
+  50% des workers inactifs (ex: avec 8 workers, workers 1,3,5,7 ne recevaient
+  jamais de shard). Remplacé par `shard_idx % num_workers` (distribution
+  round-robin correcte). Commit à venir.
+- **Ajout `persistent_workers`/`prefetch_factor`** : les paramètres étaient
+  définis dans la config hardware (`prefetch_factor: 2`) mais jamais transmis
+  au DataLoader. Ajout de `persistent_workers` et passage effectif de
+  `prefetch_factor` et `pin_memory` depuis la config. Commit à venir.
+- **Vérification des 3 configs modèle** : 100M (100,011,072 params, err
+  0.01%), 300M (299,697,920, err 0.10%), 800M (802,796,736, err 0.35%).
+  Toutes à ±3% de la cible — conforme.
+- **Smoke test complet** : entraînement 5 steps + checkpoint + resume (3 steps
+  supplémentaires) + load + génération. Tout fonctionne sans erreur.
+
+### En cours
+
+- **Pré-tokenization 12B tokens** : `nohup bash scripts/launch_training.sh 300m`
+  lancé le 21/07 à 23:33 UTC, toujours en cours le 22/07. Progression :
+  207 shards / 3.9 GB. Encore ~2h estimé avant fin de la pré-tokenization.
+  L'entraînement 300M démarrera automatiquement dans tmux `slm-train-300m`
+  une fois la pré-tokenization terminée.
+
+### Prochain jalon précis
+
+1. Attendre la fin de la pré-tokenization
+2. L'entraînement démarre automatiquement dans tmux `slm-train-300m`
+3. Surveiller : `tmux attach -t slm-train-300m`, `tensorboard --logdir logs/ --bind_all`
+4. Vérifier la reprise après interruption simulée (kill + `--resume`)
+5. GUI inference depuis les checkpoints du run réel
+6. Si stable ≥1000 steps → fichier `DONE`
+
+### Blocages / questions ouvertes
+
+- `bigcode/the-stack-dedup` toujours gated → Magicoder comme alternative Python.
+- Pré-tokenization lente (~50M tokens/min sans token HF).
+- `torch.compile(mode="reduce-overhead")` (CUDA graphs) incompatible avec
+  weight tying + gradient accumulation.
+- Pas de token HF → rate limits serrés sur les downloads.
+
+---
+
 ## Session 2026-07-21 (run 5) — Bug fixes + E2E re-verification
 
 Statut : **Fixes committed, pipeline re-verified.** Pré-tokenization 12B en cours.

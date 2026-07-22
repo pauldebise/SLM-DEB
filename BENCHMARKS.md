@@ -6,6 +6,27 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-22 (run 6) — Iteration 8: dataloader workers fix + persistent_workers
+
+- Date : 2026-07-22
+- Contexte : 1x RTX 4090 (23.5 GB VRAM), bf16, TF32, torch.compile default
+- Changement testé : correction du bug de distribution de shards dans
+  `dataset.py` + ajout effectif de `persistent_workers`/`prefetch_factor`
+  dans le DataLoader
+- Avant : formule `(shard_idx * (worker_id + 1)) % num_workers` incorrecte
+  → 50% des workers dataloader ne recevaient jamais de shard (ex: avec 8
+  workers, 4 étaient inactifs). `prefetch_factor` défini dans la config
+  hardware mais jamais passé au DataLoader. `persistent_workers` absent.
+- Après : distribution round-robin correcte (`shard_idx % num_workers`),
+  tous les workers reçoivent une part égale. `prefetch_factor=2` et
+  `persistent_workers=True` effectivement passés au DataLoader.
+- Impact attendu : latence dataloader réduite, meilleur pipelining CPU→GPU.
+  Pas de régression (smoke test 300M params 5 steps: loss 122→ OK, résume OK).
+- Décision : **gardé** — bug corrigé + optimisations dataloader activées.
+  Impact benchmark réel à mesurer sur le run long (12B tokens).
+
+---
+
 ## Session 2026-07-21 (run 5) — Iteration 7: E2E re-verification + PPL fix
 
 - Date : 2026-07-21
