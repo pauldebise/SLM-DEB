@@ -5,6 +5,66 @@ l'historique existant.
 
 ---
 
+## Session 2026-07-22 (run 14) — Manifest sync + training restart with larger dataset
+
+Statut : **Training 300M healthy (step ~140, loss 63→). Preprocess ~6.6B text (91%), toujours en cours. Restart watcher en place. Toutes les métriques TensorBoard confirmées.**
+
+### Fait
+
+- **Sync manifest** : le manifest datait de run 10 (396 shards / 3.96B tokens text).
+  Le preprocess avait produit 612+ shards (~6.1B tokens) qui n'étaient pas utilisés
+  par l'entraînement en cours. Exécution de `sync_manifest.py` → 616 train shards /
+  6.16B tokens (+55%). Commit (pas de changement code — le script existait déjà).
+- **Kill overfit training** : l'ancien entraînement (step ~790, PPL 1.00) tournait
+  sur 3.96B tokens et avait complètement overfit. Session tmux tuée, checkpoints
+  purgés.
+- **Restart training avec 6.16B tokens** : nouvel entraînement 300M lancé dans
+  tmux `slm-train-300m`. Loss curve saine : 164 → 63 en 140 steps. PPL décroît
+  de 28193 → 53. Throughput ~49k tok/s stable. GPU 100% util, 5.6 GB VRAM.
+- **Vérification complète TensorBoard** : 10 métriques confirmées présentes :
+  `train/loss`, `train/perplexity`, `train/lr`, `train/grad_norm`,
+  `train/tokens_per_sec`, `train/step_time_ms`, `train/mfu` (28.1%),
+  `system/gpu_mem_allocated` (5.6 GB), `system/gpu_util` (100%),
+  `system/dataloader_wait_ms` (3.0ms).
+- **MFU confirmé** : 28.1% cohérent avec les benchmarks précédents.
+  Le logging `train/mfu` ajouté au run 12 est maintenant effectif.
+- **Dataloader wait vérifié** : 3.0ms réel — pas de goulot data. Cohérent
+  avec GPU 100% compute-bound.
+
+### En cours
+
+- **Entraînement 300M** dans tmux `slm-train-300m` : step ~140, loss décroît
+  normalement. 6.16B tokens, 41783 max_steps. Prochain checkpoint step 5000.
+- **Pré-tokenization** (PID 40414) : 660 shards / ~6.6B tokens text (91% de
+  la cible text 7.2B). ~63 shards restants pour finir le text. Puis code
+  (Magicoder, ~75K samples) et chat (Smoltalk). ETA text : ~30 min.
+- **Restart watcher** (PID 61008) : surveille PID 40414. Déclenchera
+  automatiquement le restart avec dataset complet (text+code+chat) quand
+  le preprocess termine.
+
+### Prochain jalon précis
+
+1. Le preprocess finit (text ~91% → code → chat) → restart watcher déclenche
+   restart avec dataset complet
+2. Vérifier nouveau training : `tmux attach -t slm-train-300m`
+3. Vérifier checkpoint à step 5000 sur le run complet
+4. Simuler interruption + resume sur le run complet (critère DONE)
+5. GUI inference depuis checkpoints du run complet
+6. Si stable ≥1000 steps post-restart complet → fichier `DONE`
+
+### Blocages / questions ouvertes
+
+- bigcode/the-stack-dedup toujours gated → Magicoder.
+- Pas de token HF → rate limits streaming.
+- torch.compile reduce-overhead incompatible weight tying + grad acc.
+- Le restart watcher va déclencher un nouveau restart quand le preprocess finit
+  (prévu, pas un bug).
+- Code et chat pas encore traités — le preprocess fait texte en premier.
+- Manifest actuel dépassé (660 shards disque vs 616 dans manifest) — le
+  restart watcher le resync à la fin du preprocess.
+
+---
+
 ## Session 2026-07-22 (run 13) — Dataloader wait fix + crash/resume + restart verification
 
 Statut : **Training 300M tourne (step ~730, healthy mais overfit petit dataset). Preprocess ~5.99B tokens text, toujours en cours. Restart watcher en place.**

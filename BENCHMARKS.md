@@ -6,6 +6,36 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-22 (run 14) — Manifest sync + training restart with 6.16B tokens
+
+- Date : 2026-07-22 01:42 UTC
+- Contexte : 1× RTX 4090 (23.5 GB VRAM), bf16, TF32, torch.compile default,
+  gradient checkpointing actif
+- Changement testé : sync manifest (3.96B → 6.16B tokens, +55% de données),
+  kill overfit training (PPL 1.00 à step 790), restart from scratch avec
+  le dataset étendu
+- Avant : training sur 3.96B tokens text → overfit complet (PPL 1.00, loss
+  0.05 à step 790). Les 612+ shards produits par le preprocess n'étaient
+  pas utilisés.
+- Après : training sur 6.16B tokens text (616 shards). Loss curve saine.
+  Métriques à step 140 :
+  - Loss : 163.95 (step 10) → 63.44 (step 140), décroissance monotone
+  - PPL : 28193 → 52.71
+  - Tokens/sec : ~49,080 stable (post-warmup compile)
+  - MFU : 28.1% (confirmé dans TensorBoard)
+  - GPU memory : 5.6 GB (24% VRAM), GPU util : 100%
+  - Dataloader wait : 3.0ms — pas de goulot data
+  - Step time : ~3003ms à pleine vitesse
+- Résumé : l'entraînement est sain sur le dataset étendu. Plus d'overfit
+  précoce (PPL 53 au lieu de 1.00 au même nombre de tokens consommés).
+  Toutes les 10 métriques TensorBoard Phase 6 sont confirmées présentes
+  et correctes (y compris `train/mfu`).
+- Le restart watcher déclenchera un nouveau restart automatique quand le
+  preprocess complet (text 91% → code → chat) terminera. Ce n'est pas un
+  blocage — c'est le comportement prévu pour passer au dataset final.
+
+---
+
 ## Session 2026-07-22 (run 13) — Fix: real dataloader wait time measurement
 
 - Date : 2026-07-22 01:34 UTC
