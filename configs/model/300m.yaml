@@ -10,5 +10,6 @@ model:
   max_seq_len: 1024
   dropout: 0.0
   theta: 10000.0
+  pad_token_id: -100
   estimated_params: 299697920
   error_pct: 0.1

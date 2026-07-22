@@ -31,7 +31,7 @@ class TransformerConfig:
         self.max_seq_len = config_dict["max_seq_len"]
         self.dropout = config_dict["dropout"]
         self.theta = config_dict.get("theta", 10000.0)
-        self.pad_token_id = config_dict.get("pad_token_id", 0)
+        self.pad_token_id = config_dict.get("pad_token_id", -100)
 
         if self.d_model % self.n_heads != 0:
             raise ValueError(
@@ -104,9 +104,11 @@ class Transformer(nn.Module):
 
         if labels is not None:
             logits = self.output(x)
+            shift_logits = logits[:, :-1, :].contiguous().view(-1, logits.size(-1))
+            shift_labels = labels[:, 1:].contiguous().view(-1)
             loss = F.cross_entropy(
-                logits.view(-1, logits.size(-1)),
-                labels.view(-1),
+                shift_logits,
+                shift_labels,
                 ignore_index=self.config.pad_token_id,
             )
             return {"loss": loss, "logits": logits}
