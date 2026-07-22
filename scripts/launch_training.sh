@@ -74,7 +74,8 @@ if [ ! -f "${MANIFEST_PATH}" ]; then
     --config configs/data/mixture.yaml \
     --tokenizer "${TOKENIZER_PATH}" \
     --output-dir data/shards \
-    --max-tokens "${TOTAL_TOKENS_NUM}"
+    --max-tokens "${TOTAL_TOKENS_NUM}" \
+    --log-file logs/preprocess.log || true
 else
   echo "[3/4] Pre-tokenized data already exists at ${MANIFEST_PATH}"
 fi
