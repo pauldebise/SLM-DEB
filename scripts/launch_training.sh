@@ -15,6 +15,8 @@
 
 set -euo pipefail
 
+export PYTHONUNBUFFERED=1
+
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_DIR"
 

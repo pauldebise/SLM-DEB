@@ -11,12 +11,15 @@ import math
 import os
 import shutil
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
 import yaml
 from datasets import load_dataset
 from tokenizers import Tokenizer
+
+sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, "reconfigure") else None
 
 
 def format_chat(messages):
@@ -44,7 +47,8 @@ def check_disk_space(output_dir, estimated_bytes):
 
 
 def preprocess_source(tokenizer, source_config, output_dir, shard_size, val_fraction, rng,
-                      max_tokens=None, source_name="unknown", global_shard_start=0):
+                      max_tokens=None, source_name="unknown", global_shard_start=0,
+                      total_target_tokens=None):
     dataset_id = source_config["dataset"]
     ds_config = source_config.get("config")
     split = source_config.get("split", "train")
@@ -70,6 +74,7 @@ def preprocess_source(tokenizer, source_config, output_dir, shard_size, val_frac
     eos_id = tokenizer.token_to_id("</s>")
 
     os.makedirs(output_dir, exist_ok=True)
+    start_time = time.time()
 
     def flush_buffer(buffer, is_val):
         nonlocal shard_idx
@@ -86,7 +91,7 @@ def preprocess_source(tokenizer, source_config, output_dir, shard_size, val_frac
             "source": source_name,
         }
         shard_idx += 1
-        print(f"    Wrote {prefix} shard: {len(flat):,} tokens -> {path}")
+        print(f"    Wrote {prefix} shard: {len(flat):,} tokens -> {path}", flush=True)
         return meta
 
     for example in ds:
@@ -132,7 +137,17 @@ def preprocess_source(tokenizer, source_config, output_dir, shard_size, val_frac
 
         sample_count += 1
         if sample_count % 10000 == 0:
-            print(f"  Processed {sample_count:,} samples ({token_count:,} train tokens, {val_token_count:,} val tokens)")
+            elapsed = time.time() - start_time
+            tok_per_sec = (token_count + val_token_count) / elapsed if elapsed > 0 else 0
+            eta_str = ""
+            if max_tokens and (token_count + val_token_count) > 0:
+                remaining = max_tokens - (token_count + val_token_count)
+                eta_sec = remaining / tok_per_sec if tok_per_sec > 0 else 0
+                eta_str = f"ETA {eta_sec/60:.0f}m " if eta_sec > 0 else ""
+            print(f"  [{source_name}] {sample_count:,} samples, {token_count + val_token_count:,} tokens "
+                  f"({tok_per_sec/1e6:.1f}M tok/s) {eta_str}"
+                  f"| train={token_count/1e6:.1f}M val={val_token_count/1e6:.1f}M | "
+                  f"shards={shard_idx - global_shard_start}", flush=True)
 
         if max_tokens and token_count + val_token_count >= max_tokens:
             break
@@ -175,6 +190,8 @@ def main():
 
     rng = np.random.RandomState(args.seed)
 
+    start_time = time.time()
+
     all_train_shards = []
     all_val_shards = []
     total_train_tokens = 0
@@ -182,13 +199,13 @@ def main():
     global_shard = 0
 
     for name, src_cfg in sources.items():
-        print(f"\n=== Processing source: {name} ===")
+        print(f"\n=== Processing source: {name} ===", flush=True)
         weight = src_cfg.get("weight", 1)
         total_weight = sum(s["weight"] for s in sources.values())
         frac = weight / total_weight
         src_max_tokens = int(args.max_tokens * frac) if args.max_tokens else None
         if src_max_tokens is not None:
-            print(f"  Target max tokens: {src_max_tokens:,}")
+            print(f"  Target max tokens: {src_max_tokens:,}", flush=True)
         train_shards, val_shards, n_train, n_val = preprocess_source(
             tokenizer, src_cfg, args.output_dir, shard_size, val_fraction, rng,
             max_tokens=src_max_tokens, source_name=name,
@@ -224,7 +241,11 @@ def main():
     print(f"  Val shards: {len(all_val_shards)}")
 
     total_bytes = (total_train_tokens + total_val_tokens) * 2
+    elapsed = time.time() - start_time
     print(f"  Total size: {total_bytes / (1024**3):.2f} GB")
+    print(f"  Elapsed: {elapsed/60:.1f} min")
+    if elapsed > 0:
+        print(f"  Throughput: {(total_train_tokens + total_val_tokens) / elapsed / 1e6:.1f} M tok/s")
     check_disk_space(args.output_dir, total_bytes * 1.2)
 
 
