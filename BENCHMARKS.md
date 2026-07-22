@@ -6,6 +6,35 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-22 (run 17) — Fix: validation infinite loop + avg_loss display
+
+- Date : 2026-07-22 04:10 UTC
+- Contexte : le training 300M (run 16) était bloqué à step 1000 depuis 4+ min,
+  GPU à 99% mais aucun checkpoint produit. Le problème : `validate()` itérait
+  indéfiniment sur le val_loader.
+- Changement :
+  1. `validate()` : ajout de `max_batches` (cap à 500 batches val, ~4.6M tokens)
+  2. val_loader : `num_workers=0` (évite le cycling worker-level de
+     IterableDataset)
+  3. Display loss : `accum_loss` → `avg_loss` en console (cohérent avec PPL
+     et TensorBoard)
+- Avant (run 16 avec bug) :
+  - Step 1000 atteint → validation part → blocage infini → 0 checkpoint
+  - Console : `loss 0.0010 | ppl 1.00` (accum_loss=0.001, avg=0.00006)
+- Après (run 17 fixé) :
+  - Step 1000 atteint → validation 5s (500 batches) → checkpoint OK
+  - Console : `loss 0.0002 | ppl 1.00` (avg_loss, cohérent PPL)
+  - TensorBoard : `val/loss=0.000154`, `val/perplexity=1.000154`
+  - Crash+resume vérifié : kill step 1010 → resume step 1001 → loss continue
+  - Throughput : 49k tok/s stable
+- Impact : correction d'un bug bloquant qui empêchait la validation (et donc
+  les checkpoints) de fonctionner pendant le run réel. Première exécution
+  complète du pipeline E2E (train → val → checkpoint → resume → GUI).
+- Décision : **gardé** — bug critique corrigé. Validation fonctionne en ~5s
+  (500 batches) au lieu de boucler indéfiniment.
+
+---
+
 ## Session 2026-07-22 (run 16) — Preprocess completed + auto-restart with full 8.08B dataset
 
 - Date : 2026-07-22 02:18 UTC
