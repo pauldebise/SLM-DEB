@@ -5,7 +5,71 @@ l'historique existant.
 
 ---
 
-## Session 2026-07-22 (run 17) — Bug fixes + crash/resume verified → DONE
+## Session 2026-07-22 (run 18) — CRITICAL FIX: label-shift bug in causal LM loss
+
+Statut : **Bug corrigé. Training précédent (runs 10-17) était corrompu — le modèle apprenait l'identité (copier le token courant) au lieu de prédire le token suivant. Tout l'entraînement doit être relancé depuis zéro.**
+
+### Diagnostic
+
+- **Symptôme** : loss 0.0000, grad_norm ~0 depuis le step 7090, ppl 1.00. Impossible
+  pour un modèle qui vient de démarrer sur 8B tokens.
+- **Cause racine** : dans `transformer.py:107-111`, la loss était calculée comme
+  `cross_entropy(logits[i], labels[i])` à chaque position `i`, sans le décalage
+  (`shift`) standard des modèles causaux. Avec `input_ids == labels` (dataset)
+  et le masque causal permettant à la position `i` de s'attendre elle-même, le
+  modèle apprenait un raccourci trivial : copier le token courant vers la sortie.
+  La loss convergeait vers ~0 en ~7000 steps au lieu d'un apprentissage réel.
+- **Conséquence** : TOUS les checkpoints produits par les runs 10-17 sont
+  corrompus (modèle = fonction identité approximative). Le `DONE` (run 17) était
+  basé sur des métriques invalides — le modèle ne savait pas prédire le token
+  suivant, seulement copier l'entrée.
+
+### Fait
+
+- **Fix `transformer.py`** : ajout du shift standard causal LM :
+  `shift_logits = logits[:, :-1, :]` → prédit `shift_labels = labels[:, 1:]`.
+  La position `i` prédit maintenant le token `i+1` (prochain token) vu
+  `tokens[0..i]`. Commit 87c73f7.
+- **Fix `pad_token_id`** : par défaut 0 (`<unk>`) → -100 (standard PyTorch
+  "ignore nothing"). Configs 100m/300m/800m mises à jour avec
+  `pad_token_id: -100` explicite.
+- **Test de non-régression** : `scripts/smoke_test_loss.py` (150 steps sur
+  données réelles) :
+  - Loss initiale ~10.64 (proche de ln(32768) = 10.40 — aléatoire attendu)
+  - Loss décroît 10.64 → 5.71 en 150 steps — apprentissage réel
+  - Loss **jamais** exactement 0 après step 50
+  - grad_norm **jamais** exactement 0 après step 50
+  - Test vérifié et commité.
+- **Purge checkpoints corrompus** : `checkpoint_best.pt` et
+  `checkpoint_step_0005000.pt` supprimés.
+- **Suppression `DONE`** : le projet n'est pas terminé — le vrai entraînement
+  n'a pas encore commencé.
+
+### En cours
+
+- Aucun entraînement actif. Prêt à relancer depuis zéro avec le fix.
+
+### Prochain jalon précis
+
+1. Relancer l'entraînement 300M depuis zéro : `bash scripts/launch_training.sh 300m`
+2. Vérifier que la loss ne descend pas à 0.0000 — doit converger vers ~2-4
+   (perplexité réelle), pas vers 0.
+3. Vérifier le smoke_test_loss régulièrement (toutes les ~1000 steps) pour
+   confirmer l'absence de régression.
+4. Une fois 5000+ steps stables avec loss saine → ré-évaluer les critères DONE.
+
+### Blocages / questions ouvertes
+
+- Toutes les conclusions des runs 10-17 sont à réviser — l'entraînement buggé
+  produisait des métriques trompeuses.
+- Les benchmarks de performance (tokens/sec, MFU) restent valides car la charge
+  de calcul est identique (shift de labels ne change pas les FLOPs).
+- bigcode/the-stack-dedup toujours gated. Le déséquilibre du dataset
+  (88.6% texte / 11.2% chat / 0.1% code) persiste — à corriger plus tard.
+
+---
+
+## Session 2026-07-22 (run 17) — Bug fixes + crash/resume verified → DONE (INVALIDÉ — voir run 18)
 
 Statut : **Tous les critères de la définition "solution complète et fonctionnelle" sont vérifiés. Projet marqué DONE.**
 

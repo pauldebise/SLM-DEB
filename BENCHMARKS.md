@@ -6,6 +6,39 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-22 (run 18) — CRITICAL BUG: label-shift in causal LM loss
+
+- Date : 2026-07-22 ~04:30 UTC
+- Contexte : le training 300M (run 17) affichait `train/loss=0.0000`,
+  `train/perplexity=1.00`, `train/grad_norm=0.0000` depuis au moins le step
+  7090. Impossible pour un modèle from-scratch sur données réelles — perte nulle
+  signifie soit NaN écrasé, soit erreur de calcul de la loss.
+- **Diagnostic** : dans `transformer.py`, la loss est calculée comme
+  `cross_entropy(logits[i], labels[i])` à chaque position, sans le shift
+  standard causal LM (`logits[:, :-1]` → `labels[:, 1:]`). Or, le dataset
+  donne `input_ids == labels` (même tenseur). Le masque causal permet à la
+  position `i` de s'attendre elle-même. Le modèle apprend donc à copier le
+  token courant (identité) au lieu de prédire le token suivant.
+- **Correction** :
+  1. `transformer.py` : ajout du shift `logits[:, :-1, :]` → `labels[:, 1:]`
+  2. `TransformerConfig.pad_token_id` : défaut 0 (`<unk>`) → -100
+  3. Configs 100m/300m/800m : `pad_token_id: -100` explicite
+  4. Smoke test 150 steps (300M, données réelles) :
+     - Avant fix (bug) : loss 164 → 0.0000 en ~7000 steps, ppl 1.00
+     - Après fix : loss 10.64 → 5.71 (apprentissage réel), ppl 303
+     - grad_norm : 8.3 → 1.2 (normal, pas 0)
+- **Impact performance** : aucun changement — le shift ne modifie pas le
+  nombre de tokens traités, les FLOPs, ni l'occupation mémoire. Tous les
+  benchmarks de vitesse (49k tok/s, MFU 28%) restent valides.
+- **Conséquence** : TOUS les checkpoints précédents (runs 10-17) sont
+  corrompus. Le modèle ne sait pas prédire le token suivant, seulement copier
+  l'entrée. Toutes les métriques de loss/PPL/val des runs précédents sont
+  invalides. Le training doit être relancé depuis zéro.
+- Décision : **gardé** — correction critique obligatoire. Sans ce fix,
+  l'entraînement ne produit aucun apprentissage utile.
+
+---
+
 ## Session 2026-07-22 (run 17) — Fix: validation infinite loop + avg_loss display
 
 - Date : 2026-07-22 04:10 UTC
