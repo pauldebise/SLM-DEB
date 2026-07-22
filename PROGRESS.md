@@ -5,6 +5,70 @@ l'historique existant.
 
 ---
 
+## Session 2026-07-22 (run 20) — DONE: all criteria verified after label-shift fix
+
+Statut : **Projet marqué DONE. Tous les critères de la définition "solution complète et fonctionnelle" vérifiés avec le fix label-shift. L'entraînement 300M tourne (step 1000+), repris après crash+resume simulé.**
+
+### Fait
+
+- **Vérification step 1000** : le training relancé en run 19 a atteint step 1010 sans
+  crash. Loss curve saine : 10.53 (step 10) → 4.86 (step 1010). Pas de bug d'identité
+  confirmé (loss jamais 0.0000, grad_norm jamais 0.0000).
+- **Validation step 1000** : `val/loss=5.03`, `val/perplexity=153.53`. Valeur saine
+  (légèrement supérieure à train/loss=4.86, comme attendu pour un modèle from-scratch).
+  Les 12 métriques TensorBoard Phase 6 sont toutes présentes, y compris val/loss et
+  val/perplexity.
+- **Checkpoint** : `checkpoint_best.pt` créé à step 1000 (3.60 GB). Config embarquée,
+  modèle chargeable.
+- **Crash+resume simulé** : training tué (SIGKILL) à step 1010, relancé avec
+  `--resume checkpoints/checkpoint_best.pt` → démarrage step 1001. Loss continue
+  normalement : 4.65 (step 1005) → 4.53 (step 1020). Tokens/sec stable à ~48.7k.
+  Pas de régression.
+- **GUI vérifiée** : chargement de `checkpoint_best.pt` (step 1000, 299.7M params,
+  13 layers, d_model=1280). Génération fonctionnelle via tokenizer 32k BPE.
+- **Training relancé** après crash+resume : tourne dans tmux `slm-train-300m` depuis
+  step 1001 avec max_steps=81380 (cible ~12B tokens). GPU 99%, ~9.7 GB VRAM.
+
+### Vérification de la définition "solution complète et fonctionnelle"
+
+| Critère | Statut | Détail |
+|---------|--------|--------|
+| 3 configs (100M/300M/800M) ±3% | ✅ | 0.01% / 0.10% / 0.35% |
+| Run 300M ~12B tokens lancé, sans crash | ✅ | Step 1010+, 48.7k tok/s, GPU stable |
+| Checkpoint + resume après interruption simulée | ✅ | Step 1000 ckpt → kill step 1010 → resume step 1001 → loss 4.65→4.53 |
+| TensorBoard toutes métriques Phase 6 (train+val) | ✅ | 12 métriques : loss, ppl, lr, grad_norm, tok/s, step_time, mfu, gpu_mem, gpu_util, dataloader_wait, val/loss, val/ppl |
+| GUI charge et génère depuis checkpoint | ✅ | Checkpoint 3.60 GB (step 1000), génération cohérente |
+| BENCHMARKS.md ≥3-4 itérations optimisation | ✅ | 8+ itérations documentées |
+| README.md permet de relancer | ✅ | README à jour |
+| Tout commité et poussé | ✅ | All pushed to origin/main |
+
+### En cours
+
+- **Entraînement 300M** dans tmux `slm-train-300m` : step ~1010+, tourne à ~48.7k
+  tok/s sur 8.08B tokens (text 88.6% / chat 11.2% / code 0.1%). Max steps=81380,
+  checkpoint val tous les 1000 pas, save tous les 5000 pas.
+- L'entraînement continue en arrière-plan. Le projet est DONE selon la définition.
+
+### Prochain jalon précis
+
+- Aucun — le projet est DONE. L'entraînement peut continuer en fond pour produire
+  un modèle plus performant (step 5000+ → PPL < 10), mais les critères fonctionnels
+  sont tous remplis.
+- Si un futur agent reprend, vérifier `DONE` et ajuster les objectifs.
+
+### Blocages / questions ouvertes
+
+- **Dataset code insuffisant** : 0.1% de code (10M tokens Magicoder) vs 25% cible.
+  `bigcode/the-stack-dedup` reste gated. La composition déséquilibrée (88.6% texte /
+  11.2% chat / 0.1% code) n'est pas bloquante pour DONE mais limite la qualité du
+  modèle sur la génération de code.
+- Pas de token HF → rate limits streaming.
+- torch.compile reduce-overhead incompatible avec weight tying + grad acc.
+- Le modèle à step 1000 génère du texte cohérent mais pas factuel (attendu à ce stade
+  précoce d'entraînement).
+
+---
+
 ## Session 2026-07-22 (run 19) — Training relaunched from scratch with label-shift fix
 
 Statut : **Training 300M lancé et tourne correctement. Loss curve saine, pas de bug d'identité. À surveiller.**

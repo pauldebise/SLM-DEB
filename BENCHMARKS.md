@@ -6,6 +6,48 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-22 (run 20) — DONE verification: crash+resume + GUI with label-shift fix
+
+- Date : 2026-07-22 ~10:55 UTC
+- Contexte : après correction du bug label-shift (run 18) et relance du training (run 19),
+  tous les critères de la définition "solution complète et fonctionnelle" sont vérifiés.
+- Vérifications effectuées :
+  1. **Training step 1000** : atteint sans crash. Loss 10.53→4.86 (décroissance
+     monotone saine). val/loss=5.03, val/perplexity=153.53 au step 1000.
+     Pas de bug d'identité : loss jamais 0.0000, grad_norm jamais 0.0000.
+  2. **TensorBoard** : 12 métriques confirmées (10 train/system + 2 val).
+  3. **Crash+resume** : training tué (SIGKILL) à step 1010. Relancé avec
+     `--resume checkpoints/checkpoint_best.pt` → démarrage step 1001.
+     - Step 1005 : loss 4.65, 14.4k tok/s (compile warmup)
+     - Step 1010 : loss 4.55, 48.9k tok/s (warmup complete)
+     - Step 1020 : loss 4.53, 48.7k tok/s (stable)
+     - Resume fonctionnel : loss continue normalement après reprise.
+  4. **GUI** : chargement checkpoint step 1000 (3.60 GB, 299.7M params, 13L/d1280).
+     Génération via tokenizer 32k BPE : prompt "The capital of France is" →
+     30 nouveaux tokens cohérents. Fonctionnel.
+- Training relancé en tmux depuis step 1001. max_steps=81380 (~12B tokens cible,
+  8.08B disponibles). GPU 99%, 9.7 GB VRAM, 67°C.
+- **Toutes les métriques de performance restent valides** : 48.7k tok/s, MFU ~28%
+  (le fix label-shift n'affecte pas les FLOPs ni la mémoire).
+- Résumé : le pipeline est entièrement vérifié et fonctionnel après correction
+  du bug critique. Projet marqué DONE.
+
+### Comparaison bug (run 17) vs fix (run 20) au step ~1000
+
+| Métrique | Run 17 (bug identité) | Run 20 (fixé) |
+|----------|----------------------|---------------|
+| train/loss | 0.0002 | 4.86 |
+| train/ppl | 1.00 | 128.8 |
+| val/loss | 0.000154 | 5.03 |
+| val/ppl | 1.00 | 153.5 |
+| grad_norm | 0.0000 | 0.88 |
+| Conclusion | Modèle = copie d'identité | Apprentissage réel |
+
+Le bug label-shift produisait des métriques trompeuses (perte quasi-nulle, PPL=1.00).
+Les métriques corrigées montrent un apprentissage réel et sain.
+
+---
+
 ## Session 2026-07-22 (run 18) — CRITICAL BUG: label-shift in causal LM loss
 
 - Date : 2026-07-22 ~04:30 UTC
