@@ -6,6 +6,28 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-22 (run 11) — Manifest sync tool verified + restart watcher deployed
+
+- Date : 2026-07-22 01:07 UTC
+- Contexte : pré-tokenization toujours en cours (464 shards text_train, 4.64B tokens).
+  Le training tourne sur un manifest temporaire de 396 shards (3.96B tokens,
+  créé au run 10). Les shards continuent d'être ajoutés par le preprocess en
+  arrière-plan, mais la training ne les voit pas.
+- Changement : création de `scripts/sync_manifest.py` (scan des .bin → manifest)
+  et `scripts/restart_with_full_data.sh` (watch PID preprocess → kill training →
+  sync manifest → restart).
+- Test sync_manifest : scan de 464 shards vs 396 dans le manifest temporaire
+  (+68 shards / +0.68B tokens non utilisés). Le manifest sync retrouve
+  correctement toutes les métadonnées (source, split, num_tokens).
+- Restart watcher : lancé en nohup (PID 61008), surveille PID 40414 (preprocess).
+  Déclenchement automatique quand le preprocess sort, sans intervention humaine.
+- Impact attendu : quand le preprocess finit (~12B tokens, text + code + chat),
+  le training redémarre automatiquement avec le dataset complet. Évite de
+  laisser tourner le training sur 3.96B en boucle (3 epochs prévues sur les
+  81k steps max).
+- Décision : **gardé** — infrastructure nécessaire pour le pipeline automatisé.
+  Aucune régression sur le training en cours.
+
 ## Session 2026-07-22 (run 10) — Training started: real run metrics (300M, partial data)
 
 - Date : 2026-07-22 00:53 UTC

@@ -5,6 +5,54 @@ l'historique existant.
 
 ---
 
+## Session 2026-07-22 (run 11) — Manifest sync + auto-restart infrastructure
+
+Statut : **Training 300M tourne (step ~210, healthy). Sync manifest + restart watcher en place.**
+
+### Fait
+
+- **Création `scripts/sync_manifest.py`** : régénère `manifest.json` depuis tous
+  les fichiers `.bin` présents dans `data/shards/`. Trouve automatiquement
+  source/split/shard_idx via le nom de fichier. Testé sur les 464+ shards
+  actuels (4.64B tokens text_train, 20M val) — fonctionnement correct.
+- **Création `scripts/restart_with_full_data.sh`** : lancé en nohup (PID 61008),
+  surveille le PID du preprocess (40414). Quand il sort, sync le manifest via
+  `sync_manifest.py`, tue l'ancien tmux `slm-train-300m`, et relance
+  `launch_training.sh` avec le dataset complet.
+- **Vérification santé training** :
+  - Step 210, loss 39.5 → PPL 11.8, lr 3.15e-5, grad_norm 31, 49.1k tok/s
+  - GPU : 9.36 GB / 24 GB (38%), 99% util, 67°C — compute-bound stable
+  - Disk : 154.9 TB free — pas de contrainte
+  - Checkpoint step_25 (3.6 GB) créé, prochain à step 5000
+
+### En cours
+
+- **Entraînement 300M** dans tmux `slm-train-300m` : step ~210, loss décroît
+  normalement sur ~3.96B tokens text (manifest temporaire). ~49k tok/s.
+- **Pré-tokenization** (PID 40414) : ~464 shards text_train, pas encore de
+  code ni chat. Tourne à 99.6% CPU depuis ~1h35m.
+- **Restart watcher** (PID 61008) : nohup, surveille PID 40414. Relancera
+  l'entraînement avec manifest complet quand le preprocess finit.
+
+### Prochain jalon précis
+
+1. Le preprocess finit → restart watcher déclenche le restart avec dataset complet
+2. Vérifier le nouveau training : `tmux attach -t slm-train-300m`
+3. Vérifier checkpoint à step 5000 sur le nouveau run
+4. GUI inference depuis les checkpoints du run réel
+5. Si stable ≥1000 steps post-restart → fichier `DONE`
+
+### Blocages / questions ouvertes
+
+- bigcode/the-stack-dedup toujours gated → Magicoder.
+- Pas de token HF → rate limits streaming.
+- torch.compile reduce-overhead incompatible weight tying + grad acc.
+- Le restart watcher peut déclencher un restart sur crash du preprocess
+  (dataset partiel) — acceptable car plus de données que le manifest
+  temporaire actuel.
+
+---
+
 ## Session 2026-07-22 (run 10) — Training started with partial data + E2E verified
 
 Statut : **Entraînement 300M lancé et tourne sur ~3.96B tokens text. Phase 9 en cours.**
