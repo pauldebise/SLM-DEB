@@ -5,6 +5,54 @@ l'historique existant.
 
 ---
 
+## Session 2026-07-22 (run 19) — Training relaunched from scratch with label-shift fix
+
+Statut : **Training 300M lancé et tourne correctement. Loss curve saine, pas de bug d'identité. À surveiller.**
+
+### Fait
+
+- **Smoke test `smoke_test_loss.py`** (150 steps, 300M, données réelles) :
+  - Initial loss 10.67 (proche de ln(32768)=10.40 — modèle aléatoire attendu)
+  - Loss 10.67 → 5.78 en 150 steps — apprentissage réel
+  - Loss jamais 0.0000, grad_norm jamais 0.0000 après step 50
+  - Les 4 assertions passent (PASS: loss > 0, grad_norm > 0, loss decreases, initial > 0.1)
+  - Le fix du label-shift est vérifié et fonctionnel.
+- **Lancement training 300M** : `bash scripts/launch_training.sh 300m` → tmux `slm-train-300m`.
+  - Tokenizer 32k réutilisé, manifest intact (809 train shards, 8.08B tokens text+code+chat)
+  - Hardware config régénéré : micro_batch=9, grad_accum=16, 147k tokens/step
+  - max_steps = 81380 (cible 12B, effectif ~1.5 epochs sur 8.08B)
+- **Vérification training step 60** :
+  - Loss : 10.53 (step 10) → 8.75 (step 60), décroissance monotone saine
+  - PPL : 37526 → 6299
+  - Throughput : ~48.7k tokens/sec stable (post-compile warmup)
+  - GPU : 9.37 GB / 24 GB (38%), 98% util, 67°C — compute-bound
+  - Grad norm : 3.99 → 1.43 (normal, pas 0.0000)
+
+### En cours
+
+- **Entraînement 300M** dans tmux `slm-train-300m` : step ~60+, loss décroît
+  normalement. 8.08B tokens (809 train shards), 81380 max_steps. Prochain
+  checkpoint val à step 1000 (~50 min), save régulier à step 5000 (~4h).
+
+### Prochain jalon précis
+
+1. Vérifier le checkpoint à step 1000 — confirmer que val/loss est sain (pas 0.0000)
+2. Vérifier `train/loss` et `val/loss` dans TensorBoard après step 1000
+3. Simuler interruption + resume depuis le checkpoint step 1000 (critère DONE)
+4. Vérifier que la loss ne descend jamais à 0.0000 (surveillance continue)
+5. GUI inference depuis les checkpoints du nouveau run
+6. Si stable ≥5000 steps avec loss saine (~2-4) → ré-évaluer critères DONE
+
+### Blocages / questions ouvertes
+
+- bigcode/the-stack-dedup toujours gated → dataset code insuffisant (0.1% au lieu de 25%)
+- Composition déséquilibrée : 88.6% texte / 11.2% chat / 0.1% code
+- torch.compile reduce-overhead incompatible avec weight tying + grad acc
+- Pas de token HF → rate limits streaming
+- Tous les benchmarks de performance (tokens/sec, MFU) restent valides du run 18
+
+---
+
 ## Session 2026-07-22 (run 18) — CRITICAL FIX: label-shift bug in causal LM loss
 
 Statut : **Bug corrigé. Training précédent (runs 10-17) était corrompu — le modèle apprenait l'identité (copier le token courant) au lieu de prédire le token suivant. Tout l'entraînement doit être relancé depuis zéro.**

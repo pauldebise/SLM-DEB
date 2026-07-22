@@ -455,3 +455,35 @@ Voir Phase 7 de AGENTS.md pour la méthode.
   mais les gains deviennent marginaux au-delà de bs=8 (+3.3% de bs=8 à bs=12).
 - Décision : recommander bs=8-12 selon la mémoire dispo. bs=8 comme point d'équilibre
   mémoire/performance pour le run 300M.
+
+---
+
+## Session 2026-07-22 (run 19) — Training relaunched: smoke test + initial metrics with fix
+
+- Date : 2026-07-22 ~09:50 UTC
+- Contexte : après le fix du bug label-shift (run 18), le training 300M est relancé
+  depuis zéro sur les 8.08B tokens existants (809 train shards, text+code+chat).
+  Aucun changement de performance — le shift ne modifie pas les FLOPs ni la mémoire.
+- Smoke test (150 steps, 300M, données réelles) :
+  - Initial loss : 10.67 (proche de ln(32768) = 10.40 — aléatoire attendu)
+  - Loss final : 5.78 (décroissance réelle, pas de bug d'identité)
+  - Grad norm : 8.17 → 1.46 (jamais 0.0000)
+  - 4/4 assertions PASS
+  - Durée : 37.0s (4.1 steps/s, bs=8)
+- Training 300M real run (step 60) :
+  - Loss : 10.53 (step 10) → 8.75 (step 60), décroissance monotone saine
+  - PPL : 37526 → 6299
+  - Tokens/sec : ~48,700 stable (post-compile warmup)
+  - GPU memory : 9.37 GB (38% VRAM), GPU util : 98%
+  - Grad norm : 3.99 → 1.43 (normal, pas 0.0000)
+  - Configuration : micro_batch=9, grad_accum=16, 147k tokens/step effectifs
+  - max_steps = 81,380 (cible 12B, effectif ~1.5 epochs sur 8.08B)
+- Comparaison avec le run buggé (run 17) :
+  - Run 17 (bug identité) : loss 0.0000, ppl 1.00, grad_norm 0.0000 au step 7090
+  - Run 19 (fixé) : loss 8.75, ppl 6299, grad_norm 1.43 au step 60 — apprentissage
+    réel confirmé
+  - Le modèle apprend à prédire le token suivant, pas à copier l'entrée.
+  - Throughput identique (48.7k tok/s) — le fix n'a pas d'impact performance.
+- Résumé : le training est sain. La loss curve est normale pour un modèle from-scratch
+  sur 8.08B tokens. Prochain checkpoint val à step 1000 (permet de vérifier val/loss).
+  Le training précédent (runs 10-17) était invalide à cause du bug label-shift.
