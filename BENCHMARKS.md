@@ -6,6 +6,26 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-22 (run 9) — Robustness: os._exit fix for datasets abort
+
+- Date : 2026-07-22
+- Contexte : le script `preprocess.py` crashe systématiquement à la sortie
+  (SIGABRT, exit 134) à cause d'un bug dans `datasets` streaming : erreur
+  `PyGILState_Release` pendant la finalisation Python (threads background
+  pyarrow encore actifs).
+- Changement : `sys.exit(0)` → `os._exit(0)` en fin de `main()`. Évite la
+  teardown Python problématique. Le manifest et les shards sont déjà écrits
+  avant l'appel. Ajout try/except par source pour ne pas perdre les données
+  déjà tokenizées si un dataset échoue.
+- Impact : exit code 0 au lieu de 134. Sans ce fix, le launch script
+  (`set -e`) s'arrêtait avant de lancer l'entraînement.
+- Pré-tokenization throughput (depuis le PID running) : ~50M tokens/min en
+  moyenne sur fineweb-edu (streaming HF rate-limited sans token). Pas de
+  régression de performance.
+- Décision : **gardé** — correction de bug critique pour l'automatisation.
+
+---
+
 ## Session 2026-07-22 (run 8) — Pipeline E2E re-verification with real shards
 
 - Date : 2026-07-22

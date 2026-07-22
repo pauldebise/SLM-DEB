@@ -5,6 +5,58 @@ l'historique existant.
 
 ---
 
+## Session 2026-07-22 (run 9) — Robustness fixes + watcher for auto-start
+
+Statut : **Pré-tokenization toujours en cours (~3.7B tokens, 51% text). Fixes commités, watcher en place.**
+
+### Fait
+
+- **Fix crash on exit (`preprocess.py`)** : `datasets` streaming cause un abort
+  (PyGILState_Release) lors de la finalisation Python. Remplacé `sys.exit()`
+  par `os._exit(0)` pour éviter la teardown problématique. Commit 4d4a7c4.
+- **Ajout try/except par source dans preprocess** : si un dataset échoue
+  (gate, rate-limit, format), les autres sources continuent et le manifest
+  est quand même écrit avec les données disponibles. Plus de perte de
+  progression si Magicoder ou Smoltalk est inaccessible.
+- **Ajout `--log-file` dans preprocess** : écriture d'un fichier de log
+  séparé pour la progression, contournant les problèmes de buffering stdout
+  quand le script tourne sans TTY. Launch script mis à jour.
+- **Ajout `|| true` dans launch_training.sh** : défense en profondeur pour
+  que le script continue vers l'entraînement même si preprocess sort avec
+  un code non-zéro.
+- **Script watcher (`/tmp/training_watcher.sh`)** : lancé en nohup, surveille
+  l'apparition du manifest toutes les 30s. Quand le manifest apparaît, attend
+  10s puis démarre l'entraînement si pas déjà lancé. PID 56954.
+- **README mis à jour** : corrigé la recommandation `reduce-overhead` (crash
+  incompatible avec weight tying + gradient accumulation). Commit e2af9cf.
+
+### En cours
+
+- **Pré-tokenization 12B tokens** : 369 shards text_train (~3.69B tokens, ~51%
+  du text source). ~6.9 GB. Tourne depuis 23:33 Jul 21 (~73 min).
+  ETA text : ~80-90 min restantes. Puis code (Magicoder, rapide) et chat
+  (Smoltalk, rapide). La progression est monitorable via `ls data/shards/`.
+- **Watcher** : tourne en fond (PID 56954, log dans `logs/watcher.log`).
+  Démarrera l'entraînement automatiquement dès que le manifest apparaît.
+
+### Prochain jalon précis
+
+1. La pré-tokenization se termine → le watcher détecte le manifest →
+   l'entraînement démarre automatiquement dans tmux `slm-train-300m`.
+2. Vérifier : `tmux attach -t slm-train-300m` ou `bash scripts/status.sh`.
+3. Après 1000+ steps : vérifier TensorBoard, checkpoints, reprise.
+4. GUI inference depuis les checkpoints réels.
+5. Si stable ≥1000 steps → fichier `DONE`.
+
+### Blocages / questions ouvertes
+
+- `bigcode/the-stack-dedup` toujours gated.
+- Pas de token HF → rate limits serrés sur les downloads streaming.
+- `torch.compile(mode="reduce-overhead")` toujours incompatible avec weight
+  tying + gradient accumulation.
+
+---
+
 ## Session 2026-07-22 (run 8) — Pipeline verification while pre-tokenization runs
 
 Statut : **Pipeline E2E re-vérifié.** Pré-tokenization toujours en cours.
