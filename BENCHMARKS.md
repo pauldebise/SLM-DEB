@@ -6,6 +6,28 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-22 (run 7) — Observability: output buffering fix + status script
+
+- Date : 2026-07-22
+- Contexte : le log de pré-tokenization ne montrait aucune progression à cause
+  du buffering stdout Python quand redirigé vers un fichier.
+- Changement : `sys.stdout.reconfigure(line_buffering=True)` + `flush=True`
+  sur tous les `print()` + `PYTHONUNBUFFERED=1` dans launch script.
+  Ajout d'ETA, throughput, et compteur de shards dans les messages de
+  progression. Création de `scripts/status.sh`.
+- Avant : log vide après "[3/4] Pre-tokenizing data..." pendant des heures.
+  Impossible de savoir où en était le processus sans compter les fichiers shard.
+- Après : sortie immédiate et visible. Progression affichée toutes les
+  10k samples avec throughput et ETA. La commande `bash scripts/status.sh`
+  donne l'état complet du pipeline.
+- Pré-tokenization throughput estimé (depuis le PID running) : ~236 shards
+  / ~2.36B tokens en ~45 min CPU time, soit ~52M tok/s CPU. Le goulot réel
+  est le téléchargement streaming HF (rate-limited sans token).
+- Décision : **gardé** — purement amélioration d'observabilité, pas de
+  régression.
+
+---
+
 ## Session 2026-07-22 (run 6) — Iteration 8: dataloader workers fix + persistent_workers
 
 - Date : 2026-07-22
