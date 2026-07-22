@@ -21,15 +21,20 @@ from tokenizers import Tokenizer
 
 sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, "reconfigure") else None
 
-_log_file = None
+_log_fd = None
 
 
 def _progress_print(*args, **kwargs):
     msg = " ".join(str(a) for a in args)
-    print(msg, flush=True, **kwargs)
-    if _log_file is not None:
-        _log_file.write(msg + "\n")
-        _log_file.flush()
+    try:
+        print(msg, flush=True, **kwargs)
+    except (OSError, ValueError):
+        pass
+    if _log_fd is not None:
+        try:
+            os.write(_log_fd, (msg + "\n").encode("utf-8"))
+        except OSError:
+            pass
 
 
 def format_chat(messages):
@@ -184,10 +189,12 @@ def main():
                         help="Path to a progress log file (in addition to stdout)")
     args = parser.parse_args()
 
-    global _log_file
-    if args.log_file:
-        os.makedirs(os.path.dirname(args.log_file) or ".", exist_ok=True)
-        _log_file = open(args.log_file, "a", buffering=1)
+    global _log_fd
+    if not args.log_file:
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        args.log_file = os.path.join("logs", f"preprocess_{timestamp}.log")
+    os.makedirs(os.path.dirname(args.log_file) or ".", exist_ok=True)
+    _log_fd = os.open(args.log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
 
     if not os.path.exists(args.tokenizer):
         _progress_print(f"Tokenizer not found at {args.tokenizer}. Train it first with src/tokenizer/train_tokenizer.py")
@@ -273,8 +280,8 @@ def main():
         _progress_print(f"  Throughput: {(total_train_tokens + total_val_tokens) / elapsed / 1e6:.1f} M tok/s")
     check_disk_space(args.output_dir, total_bytes * 1.2)
 
-    if _log_file is not None:
-        _log_file.close()
+    if _log_fd is not None:
+        os.close(_log_fd)
 
     if total_train_tokens == 0:
         _progress_print("ERROR: No training tokens produced. Aborting.")
