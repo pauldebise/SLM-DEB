@@ -6,6 +6,27 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-22 (run 15) — Manifest resync + restart with 6.89B tokens
+
+- Date : 2026-07-22 01:54 UTC
+- Contexte : 1× RTX 4090 (23.5 GB VRAM), bf16, TF32, torch.compile default,
+  gradient checkpointing actif
+- Changement : sync manifest (616 → 689 shards, 6.16B → 6.89B tokens, +12%),
+  kill training run-14 (step 240), restart from scratch avec le dataset étendu
+- Avant : training sur 616 shards / 6.16B tokens (manifest run-14). Le preprocess
+  continuait de produire des shards (689 sur disque, 73 shards non utilisés).
+- Après : training sur 689 shards / 6.89B tokens. Métriques à step 30 :
+  - Loss : 164.1 → 149.8 (décroissance monotone saine)
+  - PPL : 28505 → 11654
+  - Tokens/sec : ~49,100 stable (post-warmup compile)
+  - GPU memory : ~9.4 GB (39% VRAM), GPU util : 100%
+- Résumé : le training utilise maintenant 73 shards supplémentaires (+0.73B
+  tokens). La courbe de loss est identique au run 14 au même step (164→150 vs
+  164→132 au run 14 step 30 — légèrement plus lent car dataset plus large).
+  Le restart watcher déclenchera un restart final avec code+chat quand le
+  preprocess complet termine (prévu). Aucune régression.
+
+---
 ## Session 2026-07-22 (run 14) — Manifest sync + training restart with 6.16B tokens
 
 - Date : 2026-07-22 01:42 UTC
