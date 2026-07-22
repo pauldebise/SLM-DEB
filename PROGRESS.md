@@ -5,6 +5,63 @@ l'historique existant.
 
 ---
 
+## Session 2026-07-22 (run 10) — Training started with partial data + E2E verified
+
+Statut : **Entraînement 300M lancé et tourne sur ~3.96B tokens text. Phase 9 en cours.**
+
+### Fait
+
+- **Démarrage de l'entraînement** : utilisé les shards existants (3.96B tokens,
+  fineweb-edu text) pour créer un manifest temporaire. Le watcher l'a détecté
+  et a lancé l'entraînement automatiquement dans tmux `slm-train-300m` à
+  00:53 UTC le 22/07.
+- **Vérification training** :
+  - Loss curve healthy : 164.3 (step 10) → 132.8 (step 50) → 76.0 (step 120)
+  - PPL : 28781 → 6376 → 115.5
+  - Throughput : ~48,900 tokens/sec stable après warmup compile (torch.compile
+    default, bf16, bs=9×16, 147k tokens/step effectifs)
+  - GPU : 9.4 GB / 23.5 GB (38%), 100% util, 66°C
+- **Vérification checkpoint** : checkpoint step_25 créé (3.6 GB), load OK,
+  génération fonctionnelle (qualité basse attendue à step 25)
+- **Cycle automatique** : le training cycle à travers les ~3.96B tokens
+  disponibles (~26,900 steps/epoch). Le max_steps a été calculé pour 12B
+  tokens (81,380 steps), donc il fera ~3 epochs sur les données partielles.
+- **Pré-tokenization toujours en cours** : 444 shards / 8.3 GB / ~4.44B tokens.
+  Le processus original (PID 40414) continue d'accumuler des shards text.
+  Quand il finira, le manifest complet écrasera le manifest temporaire.
+- **Watcher inactif** : le watcher (PID 56954) détecte que tmux
+  `slm-train-300m` existe déjà → exit 0, pas de conflit.
+
+### En cours
+
+- **Entraînement 300M** dans tmux `slm-train-300m` : ~48,900 tok/s, loss
+  décroît normalement. Prochain checkpoint à step 5000. Monitoring via
+  `tmux attach -t slm-train-300m`.
+- **Pré-tokenization** : toujours en cours (PID 40414). Le script de lancement
+  original (PID 40296) a été tué pour éviter un conflit. Le preprocess
+  continue seul en arrière-plan.
+
+### Prochain jalon précis
+
+1. Laisser l'entraînement tourner. Vérifier le checkpoint à step 5000.
+2. Quand le preprocess termine le manifest complet (12B), évaluer si on
+   restart l'entraînement sur le dataset complet ou si on continue.
+3. GUI inference depuis les checkpoints du run réel (déjà vérifié sur
+   step_25).
+4. Si stable ≥1000 steps et tous les critères de la définition "solution
+   complète" sont remplis → fichier `DONE`.
+
+### Blocages / questions ouvertes
+
+- `bigcode/the-stack-dedup` toujours gated → Magicoder comme alternative.
+- Pas de token HF → rate limits serrés.
+- `torch.compile(mode="reduce-overhead")` incompatible avec weight tying +
+  gradient accumulation.
+- L'entraînement tourne sur un sous-ensemble des données (texte seulement,
+  pas de code ni chat). Reprendre avec le dataset complet quand dispo.
+
+---
+
 ## Session 2026-07-22 (run 9) — Robustness fixes + watcher for auto-start
 
 Statut : **Pré-tokenization toujours en cours (~3.7B tokens, 51% text). Fixes commités, watcher en place.**

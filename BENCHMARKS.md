@@ -6,6 +6,35 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-22 (run 10) — Training started: real run metrics (300M, partial data)
+
+- Date : 2026-07-22 00:53 UTC
+- Contexte matériel : 1× RTX 4090 (23.5 GB VRAM), bf16, TF32, torch.compile
+  default, gradient checkpointing actif
+- Données : ~3.96B tokens fineweb-edu (texte éducatif, pas encore de code/chat).
+  Source text seulement — le preprocess complet (12B, 60% text / 25% code /
+  15% chat) tourne encore en arrière-plan.
+- Configuration : micro_batch=9, grad_accum=16, effective 147k tokens/step,
+  max_steps=81380 (prévu pour 12B, réel ~3 epochs sur les données actuelles)
+- Métriques à step 120 :
+  - Loss : 164.3 (step 10) → 76.0 (step 120), décroissance monotone saine
+  - PPL : 28781 → 115.5
+  - Tokens/sec : ~48,900 stable (après warmup compile : 15.6k → 22.9k →
+    24.4k → 30.5k → 47.8k → stabilisé)
+  - GPU memory : 9.36 GB (38% VRAM)
+  - GPU utilization : 100% (compute-bound)
+  - Step time : ~3.5-6s (post-warmup)
+  - MFU estimé : ~28% (cohérent avec les benchmarks précédents)
+- Checkpoint : step_25 créé (3.6 GB), load + génération OK. Prochain à 5000.
+- Goulot identifié : GPU compute-bound (100% util), pas de goulot data/mémoire.
+- Résumé : L'entraînement 300M tourne avec les performances attendues sur
+  données réelles. La courbe de loss est saine. Le modèle n'a pas encore vu
+  de code ou de chat (ces sources seront ajoutées quand le preprocess complet
+  termine). Aucune optimisation supplémentaire nécessaire — les performances
+  sont cohérentes avec les itérations 1-8.
+
+---
+
 ## Session 2026-07-22 (run 9) — Robustness: os._exit fix for datasets abort
 
 - Date : 2026-07-22
