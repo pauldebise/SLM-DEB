@@ -180,10 +180,11 @@ def purge_old_checkpoints(checkpoint_dir, keep_last_n=3, keep_best=True):
         os.remove(os.path.join(checkpoint_dir, f))
 
 
-def validate(model, val_loader, device, rank=0):
+def validate(model, val_loader, device, max_batches=None, rank=0):
     model.eval()
     total_loss = 0.0
     total_tokens = 0
+    batch_count = 0
 
     with torch.no_grad():
         for batch in val_loader:
@@ -192,6 +193,9 @@ def validate(model, val_loader, device, rank=0):
             out = model(input_ids, labels=labels)
             total_loss += out["loss"].item() * input_ids.numel()
             total_tokens += input_ids.numel()
+            batch_count += 1
+            if max_batches is not None and batch_count >= max_batches:
+                break
 
     model.train()
     avg_loss = total_loss / total_tokens if total_tokens > 0 else float("inf")
@@ -302,21 +306,28 @@ def train(args):
     else:
         val_manifest = args.manifest
 
+    max_val_batches = None
     try:
         val_loader = build_dataloader(
             manifest_path=val_manifest,
             seq_len=model_cfg["max_seq_len"],
             micro_batch_size=micro_batch_size,
             split="val",
-            num_workers=2,
+            num_workers=0,
             shuffle=False,
             seed=args.seed,
             rank=rank,
             world_size=world_size,
-            prefetch_factor=hw_cfg["dataloader"].get("prefetch_factor", 2),
-            persistent_workers=hw_cfg["dataloader"].get("persistent_workers", False),
-            pin_memory=hw_cfg["dataloader"].get("pin_memory", True),
+            prefetch_factor=2,
+            persistent_workers=False,
+            pin_memory=True,
         )
+        with open(val_manifest) as f:
+            val_manifest_data = json.load(f)
+        val_total_tokens = val_manifest_data.get("total_val_tokens", 0)
+        if val_total_tokens > 0:
+            val_seq_per_batch = micro_batch_size * model_cfg["max_seq_len"]
+            max_val_batches = max(1, min(val_total_tokens // val_seq_per_batch, 500))
     except Exception as e:
         if is_main:
             print(f"No validation data available: {e}")
@@ -446,7 +457,7 @@ def train(args):
             avg_loss = accum_loss / accum_steps
             perplexity = math.exp(min(avg_loss, 20))
 
-            print(f"step {step:7d}/{total_steps} | loss {accum_loss:.4f} | "
+            print(f"step {step:7d}/{total_steps} | loss {avg_loss:.4f} | "
                   f"ppl {perplexity:.2f} | lr {current_lr:.2e} | "
                   f"grad_norm {grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm:.2f} | "
                   f"tokens/s {tps:.0f} | step {avg_step_time*1000:.0f}ms")
@@ -475,7 +486,7 @@ def train(args):
             time_since_log = time.time()
 
         if step % args.val_interval == 0 and val_loader is not None and is_main:
-            val_metrics = validate(model, val_loader, device, rank)
+            val_metrics = validate(model, val_loader, device, max_batches=max_val_batches, rank=rank)
             print(f"  Validation: loss={val_metrics['val/loss']:.4f}, ppl={val_metrics['val/perplexity']:.2f}")
             if writer:
                 for k, v in val_metrics.items():
