@@ -6,6 +6,55 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-22 (run 16) — Preprocess completed + auto-restart with full 8.08B dataset
+
+- Date : 2026-07-22 02:18 UTC
+- Contexte : 1× RTX 4090 (23.5 GB VRAM), bf16, TF32, torch.compile default,
+  gradient checkpointing actif
+- Changement : le preprocess (lancé 21/07 23:33 UTC) a terminé toutes les sources
+  (text + code + chat). Le restart watcher a automatiquement sync le manifest
+  (8.08B tokens, 809 train shards) et relancé le training.
+- Preprocess output :
+  - Text (fineweb-edu) : 717 shards, 7.16B tokens (88.6%), ~2h sur le text
+  - Code (Magicoder) : 1 shard, 10M tokens (0.1%), quasi-instant (~75K samples)
+  - Chat (Smoltalk) : 91 shards, 0.91B tokens (11.2%), ~30 min streaming
+  - Total : 8.08B train tokens + 40.7M val tokens, 16 GB disk, ~2h45
+- Nouveau training (PID 74321) :
+  - Step 10 : loss 163.94, PPL 28181, 25.6k tok/s (compile warmup)
+  - Step 30 : loss 149.15, PPL 11177, 49.2k tok/s (post-warmup stable)
+  - Step 40 : loss 141.38, PPL 6878, 49.2k tok/s
+  - GPU : compute-bound, ~9.4 GB VRAM, 100% util
+  - max_steps = 81380 (défini pour 12B, effectif ~8.08B → ~1.5 epochs)
+- Avant : training sur 6.89B tokens text uniquement (run 15)
+- Après : training sur 8.08B tokens (text + code + chat). La loss curve est
+  identique aux runs précédents aux mêmes steps (décroissance monotone saine).
+  Le modèle voit maintenant du code et du chat en plus du texte.
+- Résumé : le pipeline complet de preprocess → restart auto → training fonctionne
+  de bout en bout sans intervention humaine. Le seul écart est la sous-représentation
+  du code (10M tokens au lieu de ~3B cible), dû à la taille du dataset Magicoder.
+  Le training est stable et produira un premier checkpoint à step 1000.
+
+### Fix: log buffering (os.open fd instead of Python open())
+
+- Date : 2026-07-22 02:12 UTC
+- Contexte : le log de progression du preprocess a cessé d'être écrit après
+  00:55 (1h+ avant la fin du processus) alors que le processus continuait à
+  produire des shards. Le stdout redirigé depuis un shell parent tué n'était
+  plus fiable malgré `flush=True` et `line_buffering=True`.
+- Changement : remplacer `open()` Python par `os.open()` avec flag `O_WRONLY |
+  O_CREAT | O_APPEND`. La fonction `_progress_print` écrit maintenant via
+  `os.write(fd, ...)` directement au niveau OS, bypassant complètement le
+  buffering Python. Le `print()` stdout est wrappé dans un try/except pour
+  survivre aux fd cassés. Si `--log-file` n'est pas spécifié, un fichier
+  `logs/preprocess_<ts>.log` est créé automatiquement.
+- Smoke test vérifié : 3 sources (text, code, chat), 500k tokens, log écrit
+  correctement avec contenu identique à stdout.
+- Décision : **gardé** — correction d'un bug réel qui rendait la progression
+  invisible pendant les runs longs (>1h). Sans ce fix, impossible de savoir
+  où en est le preprocess sans compter les fichiers shard manuellement.
+
+---
+
 ## Session 2026-07-22 (run 15) — Manifest resync + restart with 6.89B tokens
 
 - Date : 2026-07-22 01:54 UTC

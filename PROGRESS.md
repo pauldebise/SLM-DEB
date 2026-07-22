@@ -5,6 +5,71 @@ l'historique existant.
 
 ---
 
+## Session 2026-07-22 (run 16) — Preprocess finished + auto-restart with full data (8.08B tokens)
+
+Statut : **Preprocess terminé. Restart auto déclenché. Training 300M tourne sur 8.08B tokens (text+code+chat). Données complètes pour entraînement real run. Log fix commité.**
+
+### Fait
+
+- **Fin du preprocess** (PID 40414, lancé 21/07 23:33 UTC) : sorti à 02:18 UTC.
+  Total produit : 8.08B train tokens + 40.7M val tokens sur 815 shards binaires
+  (16 GB). Sources :
+  - Text (fineweb-edu) : 717 shards / 7.16B tokens (88.6%)
+  - Code (Magicoder-OSS-Instruct-75K) : 1 shard / 10M tokens (0.1%)
+  - Chat (Smoltalk) : 91 shards / 0.91B tokens (11.2%)
+  Durée totale : ~2h45 (downloads streaming HF rate-limited sans token).
+- **Restart auto réussi** : le restart watcher (PID 61008) a détecté la sortie de
+  PID 40414, sync le manifest, tué l'ancien training (step 430), et relancé le
+  training avec le dataset complet. Tmux `slm-train-300m` relancé à 02:18 UTC.
+  Nouveau PID training : 74321.
+- **Nouveau training vérifié** : loss 164 → 149 → 141 sur les 40 premiers steps
+  (step 10/30/40). Throughput ~49k tok/s stable post warmup compile. GPU 100%
+  compute-bound. max_steps = 81380 (défini pour 12B, réel ~8.08B → ~1.5 epochs).
+- **Fix log buffering** (`preprocess.py`) : remplacement de `open()` par
+  `os.open()`/`os.write()` avec fd OS direct pour le fichier de progression.
+  Le stdout redirigé depuis un shell parent mort n'est plus un point de défaillance.
+  Toujours création auto d'un fichier `logs/preprocess_<ts>.log` si `--log-file`
+  n'est pas spécifié. Smoke test vérifié (text+code+chat, 3 sources OK).
+  Commit c076751.
+
+### En cours
+
+- **Entraînement 300M** dans tmux `slm-train-300m` : step 40+, loss décroît
+  normalement. 8.08B tokens (text+code+chat). Prochain checkpoint val step 1000
+  (~50 min). Save interval 5000 approx ~4h.
+- **TensorBoard** : nouveau fichier d'événements créé pour le nouveau training
+  (PID 74321). Toutes les métriques Phase 6 sont enregistrées.
+
+### Prochain jalon précis
+
+1. Vérifier le checkpoint à step 1000 (best val) — premier checkpoint sur ce run
+2. Simuler interruption + resume depuis ce checkpoint (critère DONE)
+3. Vérifier que la GUI charge le checkpoint du run complet
+4. Si stable ≥500 steps sans crash → confirmer reproductibilité
+5. Évaluer ajout d'un dataset code plus large (The Stack est gated, Magicoder
+   ne fournit que 10M tokens vs 3B ciblés)
+
+### Blocages / questions ouvertes
+
+- **Dataset code insuffisant** : Magicoder-OSS-Instruct-75K ne fournit que
+  10M tokens de code (0.1% au lieu de 25% cible). Le dataset `bigcode/the-stack-dedup`
+  reste gated. Il faut trouver une alternative Python plus volumineuse pour
+  que le modèle apprenne à générer du code. Options à investiguer :
+  - `codeparrot/github-code-clean` (filtre Python) — script déprécié ?
+  - `bigcode/starcoderdata` (Python subset) — gated aussi ?
+  - `bigcode/the-stack-smol` — vérifier disponibilité
+  - Mirror non officiel ou subsets pré-téléchargés
+- **Composition données déséquilibrée** (88.6% texte / 11.2% chat / 0.1% code
+  vs cible 60/25/15). Le modèle verra très peu de code. Le training actuel
+  utilise la mixture telle quelle — pas bloquant pour la vérification du pipeline,
+  mais insuffisant pour un modèle qui génère du code.
+- Mêmes blocages persistants : pas de token HF (rate limits), `reduce-overhead`
+  incompatible avec weight tying + grad acc.
+- Checkpoints uniquement à step 5000 pour les saves réguliers (step 1000 pour
+  le best val). Test crash+resume possible après ~50 min.
+
+---
+
 ## Session 2026-07-22 (run 15) — Manifest resync + restart with 689 shards (6.89B)
 
 Statut : **Training 300M healthy (step 30+, loss 164→150). Preprocess 6.89B text (96%), toujours en cours. Restart watcher en place.**
