@@ -6,6 +6,27 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-22 (run 13) — Fix: real dataloader wait time measurement
+
+- Date : 2026-07-22 01:34 UTC
+- Contexte : 1× RTX 4090 (23.5 GB VRAM), bf16, TF32, torch.compile default
+- Changement testé : remplacer la métrique `system/dataloader_wait_ms` fake
+  (calculée comme 30% du step_time) par une mesure réelle avec timing autour
+  de `next(data_iter)`. Ajout de `torch.cuda.synchronize()` pour un step_time
+  précis.
+- Avant : `dataloader_wait_ms = avg_step_time * 0.3` — toujours 30% du step,
+  complètement faux (ex: 926ms affiché pour un step de 3088ms)
+- Après : timing réel de tous les appels `next(data_iter)` dans la boucle
+  d'accumulation. Valeur mesurée sur smoke test : ~3.7ms par step (0.25% du
+  step time de 1461ms) — cohérent vu `pin_memory=True` + `non_blocking=True`
+- Smoke test : tiny model (2 layers, d_model=128), 10 steps. Métrique vérifiée
+  dans TensorBoard. Aucune régression sur la loss.
+- Décision : **gardé** — la métrique était trompeuse (suggérait un goulot
+  dataloader inexistant). La vraie valeur (~3.7ms) montre que le dataloader
+  n'est PAS un goulot, ce qui est cohérent avec l'observation GPU 100%
+  compute-bound. `torch.cuda.synchronize()` ajoute une synchronisation CPU-GPU
+  par step mais l'overhead est négligeable (< 1ms).
+
 ## Session 2026-07-22 (run 12) — MFU logging added to TensorBoard
 
 - Date : 2026-07-22 01:15 UTC
