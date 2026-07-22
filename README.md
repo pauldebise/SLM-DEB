@@ -83,14 +83,16 @@ Metrics: `train/loss`, `train/perplexity`, `train/lr`, `train/grad_norm`,
 
 ## Benchmarks (RTX 4090, 24 GB)
 
-| Config | Tokens/sec | MFU | GPU Mem |
-|--------|-----------|-----|---------|
-| 300M, bs=4, no compile | 38,482 | 22.0% | 9.1 GB |
-| 300M, bs=4, compile | 48,756 | 27.9% | 7.3 GB |
-| 300M, bs=8, compile | 56,371 | 32.3% | 10.6 GB |
-| 300M, bs=12, compile | 58,254 | 33.4% | 13.9 GB |
+| Config | Tokens/sec | MFU | GPU Mem | Note |
+|--------|-----------|-----|---------|------|
+| 300M, bs=4, no compile | 38,482 | 22.0% | 9.1 GB | |
+| 300M, bs=4, compile(default) | 48,756 | 27.9% | 7.3 GB | |
+| 300M, bs=8, compile(default) | 56,371 | 32.3% | 10.6 GB | |
+| 300M, bs=9×16, compile(default) | ~49,000 | ~28% | ~8 GB | Production config (grad acc + checkpointing) |
 
-`torch.compile(mode="reduce-overhead")` recommended (+27% throughput, -20% memory).
+`torch.compile(mode="default")` is used in production (+27% throughput vs no compile).
+`mode="reduce-overhead"` (CUDA graphs) is incompatible with weight tying + gradient accumulation
+and falls back automatically.
 
 See `BENCHMARKS.md` for full optimization history.
 
