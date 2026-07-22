@@ -6,6 +6,25 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-22 (run 8) — Pipeline E2E re-verification with real shards
+
+- Date : 2026-07-22
+- Contexte : pré-tokenization 12B en cours (294 shards / 2.94B tokens / 24.5%).
+  Pipeline ré-vérifié avec un sous-ensemble de shards réels pour confirmer
+  que tout fonctionne avant le run long.
+- Test : entraînement 300M, 50 steps sur 10 shards train + 1 val (~100M tokens)
+  - Throughput : ~49k tokens/sec (post-compilation, cohérent avec benchmarks)
+  - GPU memory : pas de leak, stable en entraînement
+  - Checkpoints : step_25 et best créés correctement (~3.6 GB chaque)
+  - Resume : depuis step_25, continuation steps 26→40 OK, loss 65→58 (décroît)
+  - Load + génération : checkpoint step_40 chargé, génération fonctionnelle
+- Résumé : le pipeline complet est prêt. Tous les composants (train, checkpoint,
+  resume, load, génération) fonctionnent avec les shards réels. Aucune
+  régression depuis le dernier smoke test. La pré-tokenization peut continuer
+  et l'entraînement long démarrera automatiquement dès qu'elle finit.
+
+---
+
 ## Session 2026-07-22 (run 7) — Observability: output buffering fix + status script
 
 - Date : 2026-07-22

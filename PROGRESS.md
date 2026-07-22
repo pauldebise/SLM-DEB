@@ -5,7 +5,47 @@ l'historique existant.
 
 ---
 
-## Session 2026-07-22 (run 7) — Observability improvements while pre-tokenization runs
+## Session 2026-07-22 (run 8) — Pipeline verification while pre-tokenization runs
+
+Statut : **Pipeline E2E re-vérifié.** Pré-tokenization toujours en cours.
+
+### Fait
+
+- **Vérification end-to-end complète** avec les shards déjà produits :
+  - Création d'un manifest temporaire pointant vers 10 shards train + 1 shard val
+  - Entraînement 50 steps (300M, 9×16, 147k tok/step) → checkpoints step_25, best
+  - Resume depuis step_25 → checkout de steps 26→40 : loss décroît normalement
+    (65 → 58 → 57.9), tokens/sec stable à ~49k
+  - Load + génération depuis checkpoint `step_40`: modèle charge correctement,
+    génération fonctionnelle
+  - Nettoyage : artefacts de test supprimés (checkpoints_test, logs/test_*,
+    manifest_test.json)
+- **Vérification des 3 configs modèle** : 100M (100,011,072, err 0.01%),
+  300M (299,697,920, err 0.10%), 800M (802,796,736, err 0.35%). Toutes ±3%.
+- **Espace disque** : 142 TB libre sur /workspace — aucune contrainte.
+
+### En cours
+
+- **Pré-tokenization 12B tokens** : 294 shards / 5.5 GB / ~2.94B tokens (juillet
+  22 00:32 UTC). Environ 24.5% fait. Le processus tourne à ~5 shards/min
+  (CPU streaming HF rate-limited). Le goulot est le téléchargement (pas de
+  token HF).
+
+### Prochain jalon précis
+
+1. La pré-tokenization se termine (estimé ~2-3h restantes pour fineweb-edu,
+   puis code+chat plus rapides).
+2. Le manifest est créé, l'entraînement démarre automatiquement dans tmux
+   `slm-train-300m`.
+3. Surveiller avec `bash scripts/status.sh` et `tmux attach -t slm-train-300m`.
+4. Vérifier la reprise après interruption simulée sur le run réel.
+5. GUI inference depuis les checkpoints du run réel.
+6. Si stable ≥1000 steps → fichier `DONE`.
+
+### Blocages / questions ouvertes
+
+- Mêmes blocages que run 7 (bigcode gated, rate limits HF, pas de token HF,
+  torch.compile reduce-overhead incompatible avec weight tying + grad acc).
 
 Statut : **Améliorations commités.** Pré-tokenization toujours en cours,
 training pas encore démarré.
