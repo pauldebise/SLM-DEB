@@ -19,6 +19,7 @@ class SLMDataset(IterableDataset):
     def __init__(self, manifest_path: str, seq_len: int, split: str = "train",
                  shuffle_shards: bool = True, seed: int = 42,
                  rank: int = 0, world_size: int = 1):
+        self._manifest_dir = os.path.dirname(os.path.abspath(manifest_path))
         with open(manifest_path) as f:
             manifest = json.load(f)
 
@@ -44,8 +45,7 @@ class SLMDataset(IterableDataset):
     def _load_shard(self, shard_info):
         path = shard_info["path"]
         if not os.path.isabs(path):
-            base = Path(self.shards[0]["path"]).parent
-            path = str(base / Path(path).name)
+            path = os.path.join(self._manifest_dir, os.path.basename(path))
         return np.memmap(path, dtype=np.uint16, mode="r")
 
     def __iter__(self):

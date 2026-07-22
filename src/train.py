@@ -394,7 +394,8 @@ def train(args):
             tps = tokens_since_log / elapsed if elapsed > 0 else 0
             avg_step_time = sum(step_times[-100:]) / min(len(step_times), 100)
             current_lr = scheduler.get_last_lr()[0]
-            perplexity = math.exp(min(accum_loss, 20))
+            avg_loss = accum_loss / accum_steps
+            perplexity = math.exp(min(avg_loss, 20))
 
             print(f"step {step:7d}/{total_steps} | loss {accum_loss:.4f} | "
                   f"ppl {perplexity:.2f} | lr {current_lr:.2e} | "
@@ -402,7 +403,7 @@ def train(args):
                   f"tokens/s {tps:.0f} | step {avg_step_time*1000:.0f}ms")
 
             if writer:
-                writer.add_scalar("train/loss", accum_loss, step)
+                writer.add_scalar("train/loss", avg_loss, step)
                 writer.add_scalar("train/perplexity", perplexity, step)
                 writer.add_scalar("train/lr", current_lr, step)
                 writer.add_scalar("train/grad_norm",
