@@ -6,6 +6,24 @@ Voir Phase 7 de AGENTS.md pour la méthode.
 
 ---
 
+## Session 2026-07-21 (run 5) — Iteration 7: E2E re-verification + PPL fix
+
+- Date : 2026-07-21
+- Contexte : 1x RTX 4090 (23.5 GB VRAM), bf16, TF32, torch.compile default,
+  gradient checkpointing actif
+- Changement testé : vérification end-to-end après fix dataset (chemin relatif
+  shards) et fix display PPL (avg_loss vs sum sur micro-batches)
+- Test : entraînement 300M params, 20 steps, bs=9×16, 147k tokens/step
+  - Throughput : ~49k tokens/sec (post-compilation stable)
+  - GPU memory : ~5.6 GB (stable)
+  - Dataloader wait : < 5% du temps de step
+  - Steps 1-5 : compile warmup ~17k tok/s, puis stable à ~49k tok/s
+- Après fix PPL : le PPL affiché est maintenant cohérent avec la val/loss
+  (step 10: loss=120, avg_loss=7.5, ppl=1822). Auparavant le PPL était
+  toujours 485M à cause du cap `exp(min(sum_loss, 20))`.
+- Résumé : pipeline complet re-vérifié (entraînement → checkpoint → resume →
+  load → génération). Prêt pour le run 12B. La pré-tokenization est en cours.
+
 ## Session 2026-07-21 (run 4) — Iteration 6: end-to-end verification metrics
 
 - Date : 2026-07-21

@@ -5,6 +5,57 @@ l'historique existant.
 
 ---
 
+## Session 2026-07-21 (run 5) — Bug fixes + E2E re-verification
+
+Statut : **Fixes committed, pipeline re-verified.** Pré-tokenization 12B en cours.
+~10% fait (151 shards / 2.9 GB sur ~24 GB estimés).
+
+### Fait
+
+- **Fix dataset shard path resolution** : `_load_shard()` utilisait
+  `Path(self.shards[0]["path"]).parent` pour résoudre les chemins relatifs,
+  ce qui donnait `"."` quand les chemins dans le manifest étaient relatifs.
+  Remplacé par `os.path.dirname(os.path.abspath(manifest_path))` comme base
+  de résolution. Commit 1f62328.
+- **Fix PPL display** : la perplexité console utilisait `exp(min(accum_loss, 20))`
+  où `accum_loss` est la somme sur les micro-batches. Avec 16 steps d'accumulation,
+  le PPL était toujours `exp(20) = 485M` tant que la loss > 20/16 = 1.25.
+  Correction : `exp(min(accum_loss / accum_steps, 20))`. Le TensorBoard `train/loss`
+  logge maintenant la perte moyenne par token (pas la somme). Commit 1f62328.
+- **Vérification end-to-end** : entraînement 20 steps (300M, 32k vocab) →
+  checkpoints OK (steps 15, 20 + best) → load model OK → génération fonctionnelle
+  (basique, modèle entraîné que 20 steps).
+  - Resume depuis step 15 → loss continue normalement (90 → 51 sur 30 steps)
+  - Validation loss 6.33 → 4.55
+  - Throughput : ~49k tokens/sec après warmup compile
+  - GUI : load checkpoint OK, génération OK
+
+### En cours
+
+- **Pré-tokenization 12B tokens** : `nohup bash scripts/launch_training.sh 300m`
+  lancé le 21/07 à 23:33 UTC. Progression : 151 shards / 2.9 GB (~10%, ~30 min).
+  Estimation totale ~4h. L'entraînement 300M démarrera automatiquement dans
+  tmux `slm-train-300m` une fois la pré-tokenization terminée.
+
+### Prochain jalon précis
+
+1. Attendre la fin de la pré-tokenization (~3.5h restantes estimé)
+2. L'entraînement démarre automatiquement dans tmux `slm-train-300m`
+3. Surveiller : `tmux attach -t slm-train-300m`, `tensorboard --logdir logs/ --bind_all`
+4. Vérifier la reprise après interruption simulée (kill + `--resume`)
+5. GUI inference depuis les checkpoints du run réel
+6. Si stable ≥1000 steps → fichier `DONE`
+
+### Blocages / questions ouvertes
+
+- `bigcode/the-stack-dedup` toujours gated → Magicoder comme alternative Python.
+- Pré-tokenization lente (~50M tokens/min sans token HF). ~4h pour 12B.
+- `torch.compile(mode="reduce-overhead")` (CUDA graphs) incompatible avec
+  weight tying + gradient accumulation.
+- Pas de token HF → rate limits serrés sur les downloads.
+
+---
+
 ## Session 2026-07-21 (run 4) — End-to-end verification + relaunch
 
 Statut : **Pipeline end-to-end vérifié.** Entraînement 300M relancé avec 12B tokens.
